@@ -96,7 +96,7 @@ export default function ProjectDetail() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="mt-12 md:mt-16"
+            className="mt-12 md:mt-16 max-w-[560px]"
           >
             <div className="border border-rule/70 bg-bg-soft overflow-hidden rounded-sm">
               <video
@@ -107,7 +107,7 @@ export default function ProjectDetail() {
                 controlsList="nodownload noplaybackrate"
                 onContextMenu={(e) => e.preventDefault()}
                 disablePictureInPicture
-                className="w-full h-auto block"
+                className="w-full h-auto block max-h-[420px] object-contain bg-ink/5"
               />
             </div>
             <figcaption className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
