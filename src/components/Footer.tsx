@@ -34,6 +34,14 @@ export default function Footer() {
             linkedin ↗
           </a>
           <a
+            href={profile.xUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-ink-soft hover:text-ember transition-colors"
+          >
+            x ↗
+          </a>
+          <a
             href={profile.resumeUrl}
             target="_blank"
             rel="noopener noreferrer"

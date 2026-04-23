@@ -14,6 +14,7 @@ export default function Contact() {
     { label: 'email', value: profile.email, href: `mailto:${profile.email}` },
     { label: 'github', value: `@${profile.github}`, href: profile.githubUrl, external: true },
     { label: 'linkedin', value: `/in/${profile.linkedin}`, href: profile.linkedinUrl, external: true },
+    { label: 'x', value: `@${profile.x}`, href: profile.xUrl, external: true },
     { label: 'resume', value: 'abdullah-sheikh.pdf', href: profile.resumeUrl, external: true },
   ];
 
