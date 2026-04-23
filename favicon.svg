@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#FAF7F0"/>
+  <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle"
+        font-family="'Instrument Serif', Georgia, serif" font-style="italic"
+        font-size="48" fill="#B8462B">A</text>
+</svg>
