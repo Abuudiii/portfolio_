@@ -96,7 +96,7 @@ export default function ProjectDetail() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="mt-12 md:mt-16 max-w-[560px]"
+            className="mt-12 md:mt-16 mx-auto max-w-[560px]"
           >
             <div className="border border-rule/70 bg-bg-soft overflow-hidden rounded-sm">
               <video
