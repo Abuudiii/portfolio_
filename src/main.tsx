@@ -5,6 +5,7 @@ import App from './App';
 import Home from './pages/Home';
 import Projects from './pages/Projects';
 import Contact from './pages/Contact';
+import ProjectDetail from './pages/ProjectDetail';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -16,6 +17,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="projects" element={<Projects />} />
           <Route path="contact" element={<Contact />} />
         </Route>
+        <Route path="/p/:slug" element={<ProjectDetail />} />
       </Routes>
     </HashRouter>
   </StrictMode>

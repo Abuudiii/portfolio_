@@ -1,3 +1,9 @@
+export type CodeSnippet = {
+  filename: string;
+  lang: string;
+  body: string;
+};
+
 export type Project = {
   slug: string;
   title: string;
@@ -9,10 +15,106 @@ export type Project = {
     github?: string;
     demo?: string;
     devpost?: string;
+  };
+  media?: {
     video?: string;
+    code?: CodeSnippet[];
   };
   badge?: string;
 };
+
+const portobeatsSketch = `#include <MIDIUSB.h>
+
+// FSR analog inputs — one per finger
+const uint8_t FINGERS[5] = { A0, A1, A2, A3, A4 };
+
+// General MIDI drum map: kick, snare, closed hat, open hat, crash
+const uint8_t NOTES[5]   = { 36, 38, 42, 46, 49 };
+
+// Per-finger sensitivity: baseline threshold + velocity curve
+const uint16_t THRESHOLD = 120;
+const uint16_t CEILING   = 900;
+
+bool active[5] = { false };
+
+void noteOn(uint8_t note, uint8_t velocity) {
+  midiEventPacket_t e = { 0x09, 0x90, note, velocity };
+  MidiUSB.sendMIDI(e);
+}
+
+void noteOff(uint8_t note) {
+  midiEventPacket_t e = { 0x08, 0x80, note, 0 };
+  MidiUSB.sendMIDI(e);
+}
+
+void setup() {
+  for (uint8_t i = 0; i < 5; i++) pinMode(FINGERS[i], INPUT);
+}
+
+void loop() {
+  for (uint8_t i = 0; i < 5; i++) {
+    uint16_t p = analogRead(FINGERS[i]);
+
+    if (!active[i] && p > THRESHOLD) {
+      uint8_t velocity = map(min(p, CEILING), THRESHOLD, CEILING, 40, 127);
+      noteOn(NOTES[i], velocity);
+      active[i] = true;
+    } else if (active[i] && p < THRESHOLD / 2) {
+      noteOff(NOTES[i]);
+      active[i] = false;
+    }
+  }
+
+  MidiUSB.flush();
+  delay(2);
+}
+`;
+
+const pulselinkSketch = `#include <WiFi.h>
+#include <esp_now.h>
+
+// MAC address of the paired bracelet
+uint8_t peer[] = { 0xA4, 0xCF, 0x12, 0x34, 0x56, 0x78 };
+
+const uint8_t FSR_PIN    = 34;
+const uint8_t BUZZER_PIN = 25;
+const uint16_t TRIGGER   = 1200;
+
+typedef struct {
+  uint8_t intensity;  // 0 – 255
+} Pulse;
+
+void onReceive(const uint8_t* mac, const uint8_t* data, int len) {
+  Pulse p;
+  memcpy(&p, data, sizeof(p));
+  analogWrite(BUZZER_PIN, p.intensity);
+  delay(80);
+  analogWrite(BUZZER_PIN, 0);
+}
+
+void setup() {
+  pinMode(BUZZER_PIN, OUTPUT);
+  WiFi.mode(WIFI_STA);
+  esp_now_init();
+
+  esp_now_peer_info_t info = {};
+  memcpy(info.peer_addr, peer, 6);
+  info.channel = 0;
+  info.encrypt = false;
+  esp_now_add_peer(&info);
+
+  esp_now_register_recv_cb(onReceive);
+}
+
+void loop() {
+  uint16_t r = analogRead(FSR_PIN);
+  if (r > TRIGGER) {
+    Pulse p = { (uint8_t)map(r, TRIGGER, 4095, 40, 255) };
+    esp_now_send(peer, (uint8_t*)&p, sizeof(p));
+    delay(150);
+  }
+}
+`;
 
 export const projects: Project[] = [
   {
@@ -76,7 +178,13 @@ export const projects: Project[] = [
       'Portable drumpad glove that maps instruments to individual fingers for live beat production. Force-sensing resistors feed pressure data into an Arduino, which emits MIDI over USB with configurable sensitivity per finger.',
     stack: ['Arduino', 'C', 'MIDI', 'FSR Sensors'],
     links: {
+      demo: '#/p/portobeats',
+    },
+    media: {
       video: './projects/portobeats.mov',
+      code: [
+        { filename: 'portobeats.ino', lang: 'cpp', body: portobeatsSketch },
+      ],
     },
   },
   {
@@ -88,7 +196,13 @@ export const projects: Project[] = [
       'A pair of 3D-printed bracelets that communicate over ESP-NOW for silent, wireless haptic feedback. Pressure on one bracelet triggers a buzzer on the other. Designed for accessibility and low-power wearables.',
     stack: ['ESP32', 'C', 'ESP-NOW', 'Fusion 360'],
     links: {
+      demo: '#/p/pulselink',
+    },
+    media: {
       video: './projects/pulselink.mov',
+      code: [
+        { filename: 'pulselink.ino', lang: 'cpp', body: pulselinkSketch },
+      ],
     },
   },
 ];
