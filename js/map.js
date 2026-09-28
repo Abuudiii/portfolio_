@@ -28,6 +28,8 @@ export function createMap(container, stops, intro) {
       interactive: false,
       maxPitch: 75,
       fadeDuration: 0,
+      // The camera moves every frame during flights; don't abort in-flight tile loads on each zoom step.
+      cancelPendingTileRequestsWhileZooming: false,
       attributionControl: { compact: true },
     });
   } catch (err) {
@@ -98,7 +100,8 @@ function customizeStyle(map, stops) {
       type: 'raster',
       tiles: [SATELLITE_TILES],
       tileSize: 256,
-      maxzoom: 19,
+      // Imagery is fading out from z10 to z14, so overzoomed z12 tiles look the same with far fewer requests.
+      maxzoom: 12,
       attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
     });
   }
@@ -112,7 +115,7 @@ function customizeStyle(map, stops) {
         maxzoom: 14,
         paint: {
           'raster-opacity': ['interpolate', ['linear'], ['zoom'], 10, 1, 14, 0],
-          'raster-fade-duration': 0,
+          'raster-fade-duration': 200,
         },
       },
       beforeId,
@@ -291,7 +294,7 @@ function prefetchStops(map, stops) {
   };
   for (const stop of stops) {
     // Satellite imagery for the descent, then vector tiles (source maxzoom 14) for the city.
-    for (let z = 8; z <= 13; z++) add(SATELLITE_TILES, z, stop.center, 1);
+    for (let z = 8; z <= 12; z++) add(SATELLITE_TILES, z, stop.center, 1);
     if (vectorTemplate) {
       add(vectorTemplate, 12, stop.center, 1);
       add(vectorTemplate, 13, stop.center, 1);

@@ -9,6 +9,7 @@ import {
   slerpLngLat,
 } from './camera.js';
 import { createMap, setActiveBeacon, setRoute } from './map.js';
+import { createStepper } from './stepper.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -58,16 +59,14 @@ function renderStory() {
     const s = document.createElement('section');
     for (const [k, v] of Object.entries(attrs)) s.dataset[k] = String(v);
     story.append(s);
-    return s;
   };
   section({ seg: 'intro' });
-  const stopSections = stops.map((_, i) => {
+  stops.forEach((_, i) => {
     section({ seg: 'transit', from: i === 0 ? 'intro' : i - 1, to: i });
-    return section({ seg: 'stop', stop: i });
+    section({ seg: 'stop', stop: i });
   });
   section({ seg: 'transit', from: stops.length - 1, to: 'outro' });
   section({ seg: 'outro' });
-  return stopSections;
 }
 
 function renderCards() {
@@ -105,23 +104,17 @@ function renderCards() {
   });
 }
 
-function renderRail(stopSections) {
+function renderRail() {
   const rail = $('#rail');
   return stops.map((stop, i) => {
     const btn = el('button', 'rail-dot');
     btn.type = 'button';
     btn.setAttribute('aria-label', `Go to ${stop.org}`);
     btn.append(el('span', 'rail-label', stop.org), el('span', 'rail-mark'));
-    btn.addEventListener('click', () => scrollToStop(stopSections[i]));
+    // Snap point 0 is the intro, so stop i is point i + 1.
+    btn.addEventListener('click', () => stepper.goTo(i + 1));
     rail.append(btn);
     return btn;
-  });
-}
-
-function scrollToStop(section) {
-  scrollTo({
-    top: section.offsetTop + 0.3 * section.offsetHeight,
-    behavior: reduced ? 'auto' : 'smooth',
   });
 }
 
@@ -204,15 +197,15 @@ function renderContact() {
 // ---------- Boot ----------
 
 renderHero();
-const stopSections = renderStory();
+renderStory();
 const cards = renderCards();
-const railDots = renderRail(stopSections);
+const railDots = renderRail();
 renderProjects();
 renderContact();
 
 $('#nav-journey').addEventListener('click', (e) => {
   e.preventDefault();
-  scrollToStop(stopSections[0]);
+  stepper.goTo(1);
 });
 
 const map = createMap($('#map'), stops, intro);
@@ -260,6 +253,19 @@ addEventListener('resize', () => {
   updateMapPadding();
 });
 addEventListener('load', rebuildTimeline);
+
+// Journey snap points: top of the intro, the middle of each stop, then the projects panel.
+const projectsPanel = $('#projects');
+const stepper = createStepper({
+  getPoints: () => [
+    0,
+    ...timeline.filter((s) => s.kind === 'stop').map((s) => s.top + 0.5 * s.height),
+    projectsPanel.offsetTop,
+  ],
+  getTimeline: () => timeline,
+  isReady: () => !map || map.areTilesLoaded(),
+  isReduced: () => reduced,
+});
 document.fonts?.ready.then(rebuildTimeline);
 // The route source is created on style.load; force a redraw once it exists.
 map?.on('style.load', () => {

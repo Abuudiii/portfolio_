@@ -2,7 +2,7 @@
 
 Personal portfolio for Abdullah Sheikh.
 
-A scroll-driven motion graphic: it opens on a satellite globe, and each scroll step flies the camera to a real office, fades into a dark 3D city with OSM building extrusions, and shows that role's card. Between cities it zooms back out to the globe. The page ends with projects and contact.
+A scroll-driven motion graphic: it opens on a satellite globe, and each scroll gesture (wheel, swipe, arrow keys) plays a timed flight to the next or previous office, fades into a dark 3D city with OSM building extrusions, and shows that role's card. Between cities it zooms back out to the globe. The page ends with projects and contact, which scroll normally.
 
 ## Stack
 
@@ -19,6 +19,7 @@ Plain static HTML, CSS, and ES modules. There is no build step and no npm.
 - `js/data.js`: all content (profile, stack, projects, journey stops)
 - `js/camera.js`: pure camera math for the scroll timeline
 - `js/map.js`: MapLibre globe, style tweaks, beacons, route line
+- `js/stepper.js`: turns scroll gestures into timed flights between journey stops
 - `js/main.js`: DOM rendering and the scroll-driven animation loop
 
 ## Run locally
