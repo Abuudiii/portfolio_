@@ -18,7 +18,8 @@ Plain static HTML, CSS, and ES modules. There is no build step and no npm.
 - `css/style.css`: all styling, including map beacons and the mobile layout
 - `js/data.js`: all content (profile, stack, projects, journey stops)
 - `js/camera.js`: pure camera math for the scroll timeline
-- `js/map.js`: MapLibre globe, style tweaks, beacons, route line
+- `js/map.js`: MapLibre globe, style tweaks, beacons, route line, and the journey tile warm-up (a hidden map flown through the journey after load so the browser cache already holds every tile the flights need; skipped when Save-Data is on)
+- `js/offices.js`: pre-extracted OSM footprints for the highlighted office buildings, so the red highlight is there on arrival
 - `js/stepper.js`: turns scroll gestures into timed flights between journey stops
 - `js/main.js`: DOM rendering and the scroll-driven animation loop
 

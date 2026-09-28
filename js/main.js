@@ -8,7 +8,7 @@ import {
   haversineKm,
   slerpLngLat,
 } from './camera.js';
-import { createMap, setActiveBeacon, setRoute } from './map.js';
+import { createMap, setActiveBeacon, setRoute, warmJourney } from './map.js';
 import { createStepper } from './stepper.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -237,17 +237,30 @@ function arc(a, b, upTo, n) {
 }
 
 // Keep the focused office clear of the card: left column on desktop, bottom sheet on mobile.
+function mapPadding() {
+  return innerWidth < 720
+    ? { top: 0, right: 0, bottom: Math.round(innerHeight * 0.45), left: 0 }
+    : { top: 0, right: 0, bottom: 0, left: Math.min(480, Math.round(innerWidth * 0.4)) };
+}
+
 function updateMapPadding() {
-  if (!map) return;
-  map.setPadding(
-    innerWidth < 720
-      ? { top: 0, right: 0, bottom: Math.round(innerHeight * 0.45), left: 0 }
-      : { top: 0, right: 0, bottom: 0, left: Math.min(480, Math.round(innerWidth * 0.4)) },
-  );
+  map?.setPadding(mapPadding());
+}
+
+// Target cameras along the whole journey, in order: dense through transits (where the camera
+// sweeps across new tiles), a few per stop and globe segment.
+function journeyCameras() {
+  const opts = { stops, intro, outro, rotDeg: 0, mobile: innerWidth < 720 };
+  return timeline.flatMap((seg) => {
+    const n = seg.kind === 'transit' ? 24 : seg.kind === 'stop' ? 3 : 2;
+    return Array.from({ length: n }, (_, k) => sampleTimeline(timeline, seg.top + ((k + 0.5) / n) * seg.height, opts).camera);
+  });
 }
 
 rebuildTimeline();
 updateMapPadding();
+// Start warming only once the visible map has its own tiles, so the intro globe loads first.
+map?.once('load', () => warmJourney(journeyCameras(), mapPadding()));
 addEventListener('resize', () => {
   rebuildTimeline();
   updateMapPadding();

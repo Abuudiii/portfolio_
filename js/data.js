@@ -131,7 +131,6 @@ export const stops = [
     zoom: 15.4,
     pitch: 55,
     bearing: 30,
-    highlightRadiusM: 120,
     bullets: ['Home base: studying computer science while interning across Canada.'],
   },
   {
@@ -146,7 +145,6 @@ export const stops = [
     zoom: 15.4,
     pitch: 62,
     bearing: -20,
-    highlightRadiusM: 10,
     bullets: [
       'Cut $200K+ in annual costs by architecting AWS PrivateLink and VPC Endpoints across 350+ VPCs.',
       'Built 15+ isolated AWS sandboxes, enabling org-wide teams to safely test cloud features pre-prod.',
@@ -164,7 +162,6 @@ export const stops = [
     zoom: 15.8,
     pitch: 60,
     bearing: 40,
-    highlightRadiusM: 15,
     bullets: [
       'Developed 5+ C/C++ drivers for ADAS sensors, adding hardware peripheral support to the QNX RTOS.',
       'Designed interrupt-driven GPIO handling for ARM systems, enabling low-latency I/O across 8+ devices.',
@@ -183,7 +180,6 @@ export const stops = [
     zoom: 15.5,
     pitch: 62,
     bearing: -35,
-    highlightRadiusM: 10,
     bullets: [
       "Improved Semian's adaptive circuit breaker CPU performance by 20% by optimizing the PID controller hot path, protecting 93+ production integration points.",
       'Spearheaded Chaos Engineering tooling integration into the internal hub, enabling 100+ teams to run gameday tests.',
@@ -202,7 +198,6 @@ export const stops = [
     zoom: 15.5,
     pitch: 62,
     bearing: 15,
-    highlightRadiusM: 10,
     current: true,
     bullets: ['Building GPU compute libraries in HIP and C++ on the AGS Libraries team.'],
   },

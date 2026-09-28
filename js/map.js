@@ -1,4 +1,5 @@
 import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs';
+import { officeFootprints } from './offices.js';
 
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
 const SATELLITE_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -39,15 +40,13 @@ export function createMap(container, stops, intro) {
 
   map.on('style.load', () => {
     map.setProjection({ type: 'globe' });
-    customizeStyle(map, stops);
+    customizeStyle(map);
   });
   map.on('error', (e) => console.warn('Map error:', e.error ?? e));
-  trackOffices(map, stops);
   // Compact attribution starts expanded; collapse it so it doesn't cover the HUD.
   map.once('idle', () => {
     map.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
   });
-  map.once('load', () => prefetchStops(map, stops));
 
   beacons = stops.map((stop, i) => {
     const element = buildBeacon(stop, i);
@@ -90,7 +89,7 @@ function buildBeacon(stop, i) {
   return el;
 }
 
-function customizeStyle(map, stops) {
+function customizeStyle(map) {
   const beforeId = map.getLayer(LABEL_ANCHOR)
     ? LABEL_ANCHOR
     : map.getStyle().layers.find((l) => l.type === 'symbol')?.id;
@@ -151,7 +150,7 @@ function customizeStyle(map, stops) {
     'fill-extrusion-opacity': 0.92,
   });
   if (!map.getSource('offices')) {
-    map.addSource('offices', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addSource('offices', { type: 'geojson', data: officeFootprints });
   }
   if (!map.getLayer('buildings-office')) {
     map.addLayer(
@@ -214,103 +213,54 @@ function customizeStyle(map, stops) {
   }
 }
 
-// Expression filters can't reliably pick building polygons around a point (`within` ignores
-// polygons; `distance` misfires on some tiles), so office footprints are found from loaded tiles:
-// a building matches when it contains the office point or has a vertex within highlightRadiusM.
-// Matches are cached per stop and copied into the `offices` GeoJSON source.
-function trackOffices(map, stops) {
-  const found = stops.map(() => null);
-  const refresh = () => {
-    // Below z14 the tiles merge neighbouring footprints into one MultiPolygon, so wait for z14 tiles.
-    if (found.every(Boolean) || !map.getSource('offices') || map.getZoom() < 14) return;
-    let changed = false;
-    let buildings;
-    stops.forEach((stop, i) => {
-      if (found[i]) return;
-      buildings ??= map.querySourceFeatures('openmaptiles', { sourceLayer: 'building' });
-      // Keep only the matching parts of each (Multi)Polygon, copied to plain GeoJSON because
-      // queried features carry non-serializable internals the worker can't clone.
-      const hits = buildings.flatMap((f) =>
-        polygonsOf(f.geometry)
-          .filter((rings) => matchesOffice(rings, stop))
-          .map((rings) => ({
-            type: 'Feature',
-            properties: { render_height: f.properties.render_height, render_min_height: f.properties.render_min_height },
-            geometry: { type: 'Polygon', coordinates: JSON.parse(JSON.stringify(rings)) },
-          })),
-      );
-      if (!hits.length) return;
-      found[i] = hits;
-      changed = true;
+// Warm the browser HTTP cache (both tile hosts send long max-age + CORS) with exactly the tiles
+// the journey will request: a hidden map with the same size, padding and style is jumped through
+// sampled journey cameras, waiting for each view's tiles. Hand-computed tile lists missed most of
+// what the pitched arrival views and the in-flight transit frames actually load.
+export function warmJourney(cameras, padding) {
+  if (navigator.connection?.saveData) return;
+  const holder = document.createElement('div');
+  holder.setAttribute('aria-hidden', 'true');
+  holder.style.cssText = `position:fixed;left:0;top:0;width:${innerWidth}px;height:${innerHeight}px;visibility:hidden;pointer-events:none;z-index:-1;`;
+  document.body.append(holder);
+  let warm;
+  try {
+    warm = new maplibregl.Map({
+      container: holder,
+      style: STYLE_URL,
+      center: cameras[0].center,
+      zoom: cameras[0].zoom,
+      interactive: false,
+      maxPitch: 75,
+      fadeDuration: 0,
+      attributionControl: false,
     });
-    if (changed) {
-      map.getSource('offices').setData({ type: 'FeatureCollection', features: found.filter(Boolean).flat() });
-    }
-  };
-  // `idle` alone can fire before building tiles arrive, so also re-check when vector tiles finish.
-  map.on('idle', refresh);
-  map.on('sourcedata', (e) => {
-    if (e.sourceId === 'openmaptiles' && e.isSourceLoaded) refresh();
+  } catch {
+    holder.remove();
+    return;
+  }
+  warm.on('error', () => {}); // Best effort: a failed tile just loads on demand later.
+  warm.on('style.load', () => {
+    warm.setProjection({ type: 'globe' });
+    customizeStyle(warm);
   });
-}
-
-function polygonsOf(geometry) {
-  if (geometry.type === 'Polygon') return [geometry.coordinates];
-  if (geometry.type === 'MultiPolygon') return geometry.coordinates;
-  return [];
-}
-
-function matchesOffice(rings, stop) {
-  const [lng0, lat0] = stop.center;
-  const mPerLng = 111320 * Math.cos((lat0 * Math.PI) / 180);
-  const r2 = stop.highlightRadiusM ** 2;
-  const outer = rings[0];
-  let inside = false;
-  for (let a = 0, b = outer.length - 1; a < outer.length; b = a++) {
-    const [xa, ya] = outer[a];
-    const [xb, yb] = outer[b];
-    if (ya > lat0 !== yb > lat0 && lng0 < ((xb - xa) * (lat0 - ya)) / (yb - ya) + xa) inside = !inside;
-  }
-  if (inside) return true;
-  return outer.some(([x, y]) => ((x - lng0) * mPerLng) ** 2 + ((y - lat0) * 111320) ** 2 <= r2);
-}
-
-// Warm the browser HTTP cache (both tile hosts send long max-age + CORS) with the tiles each
-// office flyover needs, so zooming in doesn't paint the city tile by tile. The requests match
-// MapLibre's own (CORS, same URL), so the cached responses are reused when the camera arrives.
-function prefetchStops(map, stops) {
-  const vectorTemplate = map.getSource('openmaptiles')?.tiles?.[0];
-  const urls = new Set();
-  const add = (template, z, [lng, lat], radius) => {
-    const n = 2 ** z;
-    const cx = Math.floor(((lng + 180) / 360) * n);
-    const latR = (lat * Math.PI) / 180;
-    const cy = Math.floor(((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n);
-    for (let dx = -radius; dx <= radius; dx++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        urls.add(template.replace('{z}', z).replace('{x}', cx + dx).replace('{y}', cy + dy));
+  const settle = () =>
+    new Promise((resolve) => {
+      const timer = setTimeout(done, 8000);
+      function done() {
+        clearTimeout(timer);
+        warm.off('idle', done);
+        resolve();
       }
+      warm.on('idle', done);
+    });
+  warm.once('load', async () => {
+    warm.setPadding(padding);
+    for (const cam of cameras) {
+      warm.jumpTo(cam);
+      await settle();
     }
-  };
-  for (const stop of stops) {
-    // Satellite imagery for the descent, then vector tiles (source maxzoom 14) for the city.
-    for (let z = 8; z <= 12; z++) add(SATELLITE_TILES, z, stop.center, 1);
-    if (vectorTemplate) {
-      add(vectorTemplate, 12, stop.center, 1);
-      add(vectorTemplate, 13, stop.center, 1);
-      add(vectorTemplate, 14, stop.center, 2);
-    }
-  }
-  const queue = [...urls];
-  const worker = async () => {
-    while (queue.length) {
-      try {
-        // Drain the body so the full response lands in the cache.
-        await (await fetch(queue.shift(), { mode: 'cors', priority: 'low' })).arrayBuffer();
-      } catch {
-        // Best effort: a failed prefetch just means that tile loads on demand.
-      }
-    }
-  };
-  for (let i = 0; i < 4; i++) worker();
+    warm.remove();
+    holder.remove();
+  });
 }
