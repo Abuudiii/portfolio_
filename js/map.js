@@ -1,6 +1,7 @@
 import * as maplibregl from 'https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.mjs';
 
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
+const SATELLITE_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const ACCENT = '#ED1C24';
 const LABEL_ANCHOR = 'highway_name_other';
 const HIDDEN_LAYERS = [
@@ -44,6 +45,7 @@ export function createMap(container, stops, intro) {
   map.once('idle', () => {
     map.getContainer().querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
   });
+  map.once('load', () => prefetchStops(map, stops));
 
   beacons = stops.map((stop, i) => {
     const element = buildBeacon(stop, i);
@@ -94,7 +96,7 @@ function customizeStyle(map, stops) {
   if (!map.getSource('satellite')) {
     map.addSource('satellite', {
       type: 'raster',
-      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tiles: [SATELLITE_TILES],
       tileSize: 256,
       maxzoom: 19,
       attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
@@ -106,6 +108,8 @@ function customizeStyle(map, stops) {
         id: 'satellite',
         type: 'raster',
         source: 'satellite',
+        // Fully faded out by z14; stopping the layer there keeps it from requesting street-level imagery.
+        maxzoom: 14,
         paint: {
           'raster-opacity': ['interpolate', ['linear'], ['zoom'], 10, 1, 14, 0],
           'raster-fade-duration': 0,
@@ -266,4 +270,44 @@ function matchesOffice(rings, stop) {
   }
   if (inside) return true;
   return outer.some(([x, y]) => ((x - lng0) * mPerLng) ** 2 + ((y - lat0) * 111320) ** 2 <= r2);
+}
+
+// Warm the browser HTTP cache (both tile hosts send long max-age + CORS) with the tiles each
+// office flyover needs, so zooming in doesn't paint the city tile by tile. The requests match
+// MapLibre's own (CORS, same URL), so the cached responses are reused when the camera arrives.
+function prefetchStops(map, stops) {
+  const vectorTemplate = map.getSource('openmaptiles')?.tiles?.[0];
+  const urls = new Set();
+  const add = (template, z, [lng, lat], radius) => {
+    const n = 2 ** z;
+    const cx = Math.floor(((lng + 180) / 360) * n);
+    const latR = (lat * Math.PI) / 180;
+    const cy = Math.floor(((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n);
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        urls.add(template.replace('{z}', z).replace('{x}', cx + dx).replace('{y}', cy + dy));
+      }
+    }
+  };
+  for (const stop of stops) {
+    // Satellite imagery for the descent, then vector tiles (source maxzoom 14) for the city.
+    for (let z = 8; z <= 13; z++) add(SATELLITE_TILES, z, stop.center, 1);
+    if (vectorTemplate) {
+      add(vectorTemplate, 12, stop.center, 1);
+      add(vectorTemplate, 13, stop.center, 1);
+      add(vectorTemplate, 14, stop.center, 2);
+    }
+  }
+  const queue = [...urls];
+  const worker = async () => {
+    while (queue.length) {
+      try {
+        // Drain the body so the full response lands in the cache.
+        await (await fetch(queue.shift(), { mode: 'cors', priority: 'low' })).arrayBuffer();
+      } catch {
+        // Best effort: a failed prefetch just means that tile loads on demand.
+      }
+    }
+  };
+  for (let i = 0; i < 4; i++) worker();
 }
