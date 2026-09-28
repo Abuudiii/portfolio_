@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#FAF7F0" />
+    <meta name="theme-color" content="#07080A" />
     <meta name="description" content="Abdullah Sheikh. Software engineer working on systems, GPUs, and reliability." />
     <title>Abdullah Sheikh</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -13,9 +13,62 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap"
       rel="stylesheet"
     />
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.11.2/dist/maplibre-gl.css" />
+    <link rel="stylesheet" href="./css/style.css" />
+    <script type="module" src="./js/main.js"></script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="map" aria-hidden="true"></div>
+
+    <nav id="nav">
+      <a class="nav-name" href="#" id="nav-name">Abdullah Sheikh</a>
+      <div class="nav-links">
+        <a href="#story" id="nav-journey">Journey</a>
+        <a href="#projects">Projects</a>
+        <a href="#contact">Contact</a>
+        <a href="./resume.pdf" id="nav-resume" target="_blank" rel="noopener">Résumé</a>
+      </div>
+    </nav>
+
+    <header id="hero">
+      <h1 id="hero-name"></h1>
+      <p id="hero-title" class="hero-title"></p>
+      <p id="hero-currently" class="hero-currently"></p>
+      <p id="hero-tagline" class="hero-tagline"></p>
+      <p class="hero-cue">Scroll to begin ↓</p>
+    </header>
+
+    <div id="transit-label" aria-hidden="true"></div>
+    <div id="cards"></div>
+    <nav id="rail" aria-label="Journey stops"></nav>
+    <div id="hud" aria-hidden="true"></div>
+
+    <main id="story"></main>
+
+    <section id="projects" class="panel">
+      <div class="panel-inner">
+        <p class="eyebrow">Selected work</p>
+        <h2 class="panel-title">Projects</h2>
+        <div id="project-grid" class="project-grid"></div>
+      </div>
+    </section>
+
+    <footer id="contact" class="panel">
+      <div class="panel-inner">
+        <p class="eyebrow">Get in touch</p>
+        <h2 class="panel-title">Contact</h2>
+        <ul id="contact-links" class="contact-links"></ul>
+        <div id="contact-stack" class="contact-stack"></div>
+        <p id="contact-copy" class="contact-copy"></p>
+      </div>
+    </footer>
+
+    <dialog id="video-modal">
+      <div class="modal-head">
+        <p id="video-title" class="modal-title"></p>
+        <button type="button" id="video-close" class="modal-close" aria-label="Close video">✕</button>
+      </div>
+      <video id="video-player" controls preload="none" playsinline></video>
+    </dialog>
   </body>
 </html>
