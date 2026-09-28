@@ -4,46 +4,63 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#5C94FC" />
+    <meta name="theme-color" content="#8FB8FF" />
     <meta name="description" content="Abdullah Sheikh. Software engineer working on systems, GPUs, and reliability." />
     <title>Abdullah Sheikh</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=VT323&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./css/style.css" />
+    <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js"}}</script>
     <script type="module" src="./js/main.js"></script>
   </head>
   <body class="mode-title">
-    <div id="stage">
+    <div id="stage" tabindex="-1">
       <canvas id="game" aria-hidden="true"></canvas>
+      <div id="crosshair" aria-hidden="true"></div>
 
       <div id="hud">
         <span id="hud-name" class="hud-item"></span>
         <span id="hud-zone" class="hud-item" aria-live="polite"></span>
-        <span id="hud-coins" class="hud-item">COINS 0/11</span>
-        <span id="hud-bugs" class="hud-item">BUGS 0</span>
+        <span id="hud-found" class="hud-item">FOUND 0/12</span>
         <div class="hud-buttons">
-          <button type="button" id="sound-toggle" class="px-btn" aria-label="Toggle sound">♪ OFF</button>
-          <button type="button" id="skip-btn" class="px-btn">SKIP TO RÉSUMÉ</button>
+          <button type="button" id="skip-btn" class="mc-btn mc-btn-small">Résumé</button>
+        </div>
+      </div>
+
+      <div id="hud-target" aria-live="polite"></div>
+      <div id="hotbar" aria-hidden="true"></div>
+      <pre id="debug-overlay" hidden></pre>
+
+      <div id="pause-screen">
+        <div class="pause-panel">
+          <h2>Game paused</h2>
+          <p>Click to look around</p>
+          <button type="button" id="resume-btn" class="mc-btn mc-btn-wide">Back to Game</button>
+          <button type="button" id="pause-skip" class="mc-btn mc-btn-wide">Résumé</button>
         </div>
       </div>
 
       <div id="title-screen">
-        <h1 id="title-name"></h1>
+        <div class="title-logo">
+          <h1 id="title-name"></h1>
+          <p id="title-splash"></p>
+        </div>
         <p id="title-title"></p>
-        <p id="title-currently"></p>
-        <button type="button" id="start-btn" class="px-btn">PRESS START</button>
-        <button type="button" id="title-skip" class="px-btn px-btn-ghost">SKIP TO RÉSUMÉ</button>
-        <p class="hint">← → / A D to move · SPACE / ↑ / W to jump</p>
+        <div class="title-buttons">
+          <button type="button" id="start-btn" class="mc-btn mc-btn-wide">Singleplayer</button>
+          <button type="button" id="title-skip" class="mc-btn mc-btn-wide">Résumé</button>
+        </div>
+        <p class="hint">WASD move · mouse look · left-click break · right-click use/place · 1–9 blocks · R respawn · F3 debug</p>
       </div>
     </div>
 
     <div id="touch" aria-hidden="true">
-      <div class="touch-dpad">
-        <button type="button" id="t-left" tabindex="-1">◀</button>
-        <button type="button" id="t-right" tabindex="-1">▶</button>
-      </div>
-      <button type="button" id="t-jump" tabindex="-1">A</button>
+      <div id="t-look" tabindex="-1"></div>
+      <div id="t-stick" tabindex="-1"><div class="stick-knob"></div></div>
+      <button type="button" id="t-jump" class="mc-btn" tabindex="-1">JUMP</button>
+      <button type="button" id="t-break" class="mc-btn" tabindex="-1">BREAK</button>
+      <button type="button" id="t-use" class="mc-btn" tabindex="-1">USE</button>
     </div>
 
     <main id="resume" class="sr-only">
@@ -52,33 +69,33 @@
         <p id="r-title"></p>
         <p id="r-currently"></p>
         <p id="r-tagline"></p>
-        <button type="button" id="play-btn" class="px-btn">▶ PLAY GAME</button>
+        <button type="button" id="play-btn" class="mc-btn">▶ Enter world</button>
       </header>
 
       <section id="r-experience" class="r-section">
-        <h2>EXPERIENCE</h2>
+        <h2>Experience</h2>
         <div id="r-exp-list" class="r-list"></div>
       </section>
 
       <section id="r-projects" class="r-section">
-        <h2>PROJECTS</h2>
+        <h2>Projects</h2>
         <div id="r-proj-list" class="r-list"></div>
       </section>
 
       <section id="r-contact" class="r-section">
-        <h2>CONTACT</h2>
+        <h2>Contact</h2>
         <ul id="contact-links" class="contact-links"></ul>
         <div id="contact-stack" class="contact-stack"></div>
         <p id="contact-copy" class="contact-copy"></p>
       </section>
     </main>
 
-    <dialog id="info" class="nes-box">
+    <dialog id="info" class="mc-panel">
       <button type="button" id="info-close" class="dialog-close" aria-label="Close">✕</button>
       <div id="info-body"></div>
     </dialog>
 
-    <dialog id="video-modal" class="nes-box">
+    <dialog id="video-modal" class="mc-panel">
       <div class="modal-head">
         <p id="video-title" class="modal-title"></p>
         <button type="button" id="video-close" class="dialog-close" aria-label="Close video">✕</button>
@@ -87,7 +104,7 @@
     </dialog>
 
     <noscript>
-      <p class="noscript">This site is a small game and needs JavaScript. <a href="./resume.pdf">Read the résumé (PDF)</a>.</p>
+      <p class="noscript">This site is a small voxel world and needs JavaScript. <a href="./resume.pdf">Read the résumé (PDF)</a>.</p>
     </noscript>
   </body>
 </html>

@@ -1,7 +1,8 @@
 import { profile, stack, projects, stops } from './data.js';
 import { $, el, link, chips } from './dom.js';
-import { createGame } from './game.js';
-import { setSound, soundOn } from './audio.js';
+
+const touch = matchMedia('(pointer: coarse)').matches;
+document.body.classList.toggle('touch', touch);
 
 const videoModal = $('#video-modal');
 const videoPlayer = $('#video-player');
@@ -133,7 +134,7 @@ function stopContent(i) {
   const bullets = el('ul', 'info-bullets');
   for (const b of stop.bullets) bullets.append(el('li', null, b));
   return [
-    el('p', 'eyebrow', `WORLD ${i + 1}`),
+    el('p', 'eyebrow', `${i + 1}/${stops.length} · ${stop.kind === 'education' ? 'EDUCATION' : 'EXPERIENCE'}`),
     head,
     el('p', 'info-tagline', stop.role),
     el('p', 'info-meta', `${stop.dates} · ${stop.city}`),
@@ -158,9 +159,9 @@ function projectContent(k) {
 
 function goalContent() {
   return [
-    el('p', 'eyebrow', 'COURSE CLEAR!'),
+    el('p', 'eyebrow', 'RESPAWN POINT SET'),
     el('h2', 'info-title', profile.name),
-    el('p', 'info-tagline', "Thanks for playing. Let's talk:"),
+    el('p', 'info-tagline', "Thanks for exploring. Let's talk:"),
     fillContactList(el('ul', 'contact-links')),
     stackGroups(el('div', 'info-stack')),
   ];
@@ -172,7 +173,10 @@ function openInfo(nodes) {
   if (!info.open) info.showModal();
 }
 
-$('#info-close').addEventListener('click', () => info.close());
+$('#info-close').addEventListener('click', () => {
+  info.close();
+  if (mode === 'play' && !touch) game?.requestLock();
+});
 info.addEventListener('click', (e) => {
   if (e.target === info) info.close();
 });
@@ -183,17 +187,26 @@ info.addEventListener('close', () => {
 
 // ---------- HUD ----------
 
-const soundBtn = $('#sound-toggle');
-function updateSoundLabel() {
-  soundBtn.textContent = soundOn() ? '♪ ON' : '♪ OFF';
-  soundBtn.setAttribute('aria-pressed', String(soundOn()));
+function onInteract(entry) {
+  openInfo(
+    entry.kind === 'stop'
+      ? stopContent(entry.index)
+      : entry.kind === 'project'
+        ? projectContent(entry.index)
+        : goalContent(),
+  );
 }
 
 function onHud(state) {
   $('#hud-zone').textContent = state.zone;
-  $('#hud-coins').textContent = `COINS ${state.coinsFound.size}/${state.level.blocks.size}`;
-  $('#hud-bugs').textContent = `BUGS ${state.bugs}`;
-  updateSoundLabel();
+  $('#hud-found').textContent = `FOUND ${state.found.size}/12`;
+  $('#hud-target').textContent = state.targetLabel
+    ? (touch ? 'Tap USE: ' : 'Right-click: ') + state.targetLabel
+    : '';
+}
+
+function onLockChange(locked) {
+  document.body.classList.toggle('pointer-free', !locked);
 }
 
 // ---------- Modes ----------
@@ -221,31 +234,43 @@ renderResume();
 $('#hud-name').textContent = profile.name;
 $('#title-name').textContent = profile.name;
 $('#title-title').textContent = profile.title;
-$('#title-currently').textContent = profile.currently;
+$('#title-splash').textContent = `${profile.currently}!`;
 
-const game = createGame({
-  canvas: $('#game'),
-  stops,
-  projects,
-  onHit: (block) => openInfo(block.kind === 'stop' ? stopContent(block.index) : projectContent(block.index)),
-  onGoal: () => openInfo(goalContent()),
-  onHud,
-});
+let createGame = null;
+try {
+  ({ createGame } = await import('./voxel.js'));
+} catch (err) {
+  console.error('voxel world unavailable', err);
+}
+
+const game =
+  createGame?.({ canvas: $('#game'), stops, projects, profile, touch, onInteract, onHud, onLockChange }) ?? null;
 
 if (game) {
+  document.documentElement.style.setProperty('--dirt', `url(${game.dirtDataUrl})`);
   game.start();
   onHud(game.state);
 } else {
   $('#play-btn').hidden = true;
 }
 
-$('#start-btn').addEventListener('click', () => setMode('play'));
+$('#start-btn').addEventListener('click', () => {
+  setMode('play');
+  if (!touch) game?.requestLock();
+});
 $('#title-skip').addEventListener('click', () => setMode('resume'));
 $('#skip-btn').addEventListener('click', () => setMode('resume'));
 $('#play-btn').addEventListener('click', () => setMode('play'));
-soundBtn.addEventListener('click', () => {
-  setSound(!soundOn());
-  updateSoundLabel();
+$('#resume-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  game?.requestLock();
+});
+$('#pause-skip').addEventListener('click', (e) => {
+  e.stopPropagation();
+  setMode('resume');
+});
+$('#pause-screen').addEventListener('click', (e) => {
+  if (!(e.target instanceof HTMLButtonElement)) game?.requestLock();
 });
 addEventListener('keydown', (e) => {
   if (mode !== 'title' || !game) return;
@@ -259,4 +284,3 @@ addEventListener('keydown', (e) => {
 const startInResume =
   !game || location.hash === '#resume' || matchMedia('(prefers-reduced-motion: reduce)').matches;
 setMode(startInResume ? 'resume' : 'title');
-updateSoundLabel();
