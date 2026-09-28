@@ -1,26 +1,30 @@
-# Portfolio · globe journey
+# Portfolio · pixel quest
 
 Personal portfolio for Abdullah Sheikh.
 
-A scroll-driven motion graphic: it opens on a satellite globe, and each scroll gesture (wheel, swipe, arrow keys) plays a timed flight to the next or previous office, fades into a dark 3D city with OSM building extrusions, and shows that role's card. Between cities it zooms back out to the globe. The page ends with projects and contact, which scroll normally.
+An 8-bit side-scrolling platformer. You run right through one world per stop (UCalgary → Enverus → BlackBerry QNX → Shopify → AMD); hitting the `?` block in each world opens that role. The Project Arcade has one `?` block per project, and the flagpole and castle at the end open contact info. All art is drawn in code as palette-indexed pixel strings, and all sound is synthesized with WebAudio (off by default; `♪` button or `M`). **Skip to résumé** (or `#resume`, or `prefers-reduced-motion`) shows the same content as a plain page.
+
+Controls: `← →` / `A D` to move, `Space` / `↑` / `W` to jump. Touch devices get on-screen buttons. Add `?debug` to expose `window.__pq` for testing.
 
 ## Stack
 
 Plain static HTML, CSS, and ES modules. There is no build step and no npm.
 
-- [MapLibre GL JS](https://maplibre.org/) 6 (globe projection), loaded from unpkg
-- [OpenFreeMap](https://openfreemap.org/) `dark` style for vector tiles and 3D buildings
-- Esri World Imagery for the satellite layer
+- Canvas 2D, WebAudio, `<dialog>`
+- [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) and [VT323](https://fonts.google.com/specimen/VT323) from Google Fonts
 
 ## Files
 
-- `index.html`: page shell and fixed overlays
-- `css/style.css`: all styling, including map beacons and the mobile layout
-- `js/data.js`: all content (profile, stack, projects, journey stops)
-- `js/camera.js`: pure camera math for the scroll timeline
-- `js/map.js`: MapLibre globe, style tweaks, beacons, route line
-- `js/stepper.js`: turns scroll gestures into timed flights between journey stops
-- `js/main.js`: DOM rendering and the scroll-driven animation loop
+- `index.html`: game stage, HUD, title screen, touch controls, résumé page, dialogs
+- `css/style.css`: all styling, including modes, NES-style panels, and the touch layout
+- `js/data.js`: all content (profile, stack, projects, stops)
+- `js/dom.js`: small DOM helpers
+- `js/level.js`: tile ids and the level layout built from the content
+- `js/engine.js`: pure physics (player, enemies, tile collisions)
+- `js/sprites.js`: palette, pixel-string sprites, and sprite/logo baking
+- `js/audio.js`: synthesized sound effects
+- `js/game.js`: game loop, input, camera, and rendering
+- `js/main.js`: boot, modes, info dialogs, and the résumé page
 
 ## Run locally
 
@@ -37,16 +41,15 @@ All copy lives in `js/data.js`. Edit it there rather than in the other modules.
 - `profile`: name, tagline, contact info
 - `stack`: technical skills grouped by category
 - `projects`: project cards (an optional `video` opens in the demo modal)
-- `stops`: journey stops in chronological order, each with its office coordinates, camera zoom, pitch, and bearing, and card bullets
-- `intro` / `outro`: globe cameras for the start and end of the scroll
+- `stops`: stops in chronological order, each with its logo, building `color`, and bullets; each becomes a world in the level
 
 ## Deploy
 
 The site is served as-is by GitHub Pages (`.nojekyll` is included). Either:
 
-- point GitHub Pages at the `motion-globe` branch (root folder), or
+- point GitHub Pages at the `pixel-quest` branch (root folder), or
 - push this branch over `gh-pages`. This **replaces the live site**:
 
   ```bash
-  git push origin motion-globe:gh-pages --force
+  git push origin pixel-quest:gh-pages --force
   ```
