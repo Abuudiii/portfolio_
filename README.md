@@ -35,7 +35,7 @@ pnpm preview             # serve dist/
 Deploys to GitHub Pages through the `gh-pages` branch:
 
 ```bash
-pnpm deploy
+pnpm run deploy          # `pnpm deploy` is a built-in pnpm command, so `run` is required
 ```
 
 ## Content
