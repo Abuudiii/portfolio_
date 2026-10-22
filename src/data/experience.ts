@@ -1,33 +1,13 @@
 export type Experience = {
   company: string;
-  role: string;
-  dates: string;
-  logo: string;
+  when: string;
+  summary: string;
 };
 
 export const experience: Experience[] = [
-  {
-    company: 'AMD',
-    role: 'Software Engineering Intern',
-    dates: 'Summer 2026',
-    logo: './logos/amd.png',
-  },
-  {
-    company: 'Shopify',
-    role: 'Platform SRE Intern',
-    dates: 'Winter 2026',
-    logo: './logos/shopify.png',
-  },
-  {
-    company: 'BlackBerry',
-    role: 'Systems Software Engineering Intern, QNX',
-    dates: 'Fall 2025',
-    logo: './logos/blackberry.png',
-  },
-  {
-    company: 'Enverus',
-    role: 'Site Reliability Engineer Intern',
-    dates: 'Summer 2025',
-    logo: './logos/enverus.png',
-  },
+  { company: 'Dominion Dynamics', when: '2027', summary: 'Incoming. Autonomy systems for Arctic defence.' },
+  { company: 'AMD', when: 'Now', summary: 'GPU compute kernels for ROCm on Instinct GPUs.' },
+  { company: 'Shopify', when: '2026', summary: 'Performance and resilience tooling for core infra.' },
+  { company: 'BlackBerry QNX', when: '2025', summary: 'Drivers and interrupt-driven I/O on the QNX RTOS.' },
+  { company: 'Enverus', when: '2025', summary: 'AWS network infrastructure across 350+ VPCs.' },
 ];

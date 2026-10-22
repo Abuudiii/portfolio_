@@ -1,21 +1,20 @@
-# Portfolio · v4
+# Portfolio · v5
 
-Personal portfolio for Abdullah Sheikh.
-
-Editorial-minimal design. Warm ivory background, Instrument Serif display, JetBrains Mono accents.
+Personal portfolio for Abdullah Sheikh: a single 1-bit page. Experience on the left, contacts at the bottom, and a dithered Earth + Moon orbiting on a canvas.
 
 ## Stack
 
 - Vite 5 · React 18 · TypeScript 5
 - Tailwind CSS 3
-- Framer Motion 11
-- React Router 6 (HashRouter for GitHub Pages compatibility)
+- No animation library: the scene is a hand-rolled canvas renderer
 
-## Pages
+## How the orbit works
 
-- `/` : Intro, work, education, stack
-- `/projects` : Curated selection of work (Metal Ray Tracer, OpsForge, CivicPulse, PortoBeats, PulseLink)
-- `/contact` : Minimal contact page
+`src/lib/orbit.ts` shades the Earth, Moon, atmosphere, orbit path, starfield, nebula, and the occasional meteor into a low-res buffer each frame, then thresholds every pixel against a static R2 ordered-dither mask. Each pixel is one of two colours. Shading and texture lookups are per-pixel, the Moon and Earth shadow each other, and the draw order flips depending on which side of the Earth the Moon is on.
+
+`src/components/Orbit.tsx` sizes the buffer so each dither dot is a whole number of device pixels, and upscales it with `image-rendering: pixelated`. With `prefers-reduced-motion` it draws one static frame.
+
+The two colours are `paper` / `ink` in `tailwind.config.ts` and `PAPER` / `INK` in `src/lib/orbit.ts`. Keep them in sync.
 
 ## Dev
 
@@ -33,7 +32,7 @@ pnpm preview             # serve dist/
 
 ## Deploy
 
-Deploys to GitHub Pages via `gh-pages` branch. Update the `homepage` field in `package.json` to point at the correct repo URL, then:
+Deploys to GitHub Pages through the `gh-pages` branch:
 
 ```bash
 pnpm deploy
@@ -41,14 +40,9 @@ pnpm deploy
 
 ## Content
 
-All copy lives in `src/data/*.ts`. Edit there rather than touching component files.
+All copy is in `src/data/`:
 
-- `profile.ts` : name, tagline, contact info
-- `education.ts` : school entries
-- `experience.ts` : job history (AMD, Shopify, BlackBerry, Enverus)
-- `stack.ts` : technical skills grouped by category
-- `projects.ts` : project cards
+- `profile.ts`: name, tagline, location, school, email, links
+- `experience.ts`: one line per role
 
-## Prior versions
-
-The previous portfolio (Matrix/hacker theme) lives at `oldportfolio/` for reference.
+`public/resume.pdf` is the linked resume.
