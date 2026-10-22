@@ -57,7 +57,8 @@ export default function App() {
           </p>
         </header>
 
-        <section aria-labelledby="experience" className="max-w-[30rem]">
+        {/* Wide enough that every summary stays on one line, so all rows share one height. */}
+        <section aria-labelledby="experience" className="max-w-[34rem]">
           <h2 id="experience" className="label mb-4">
             Experience
           </h2>
