@@ -1,16 +1,7 @@
-/**
- * 1-bit dithered Earth + Moon renderer.
- *
- * Everything is shaded as a continuous intensity, then thresholded against a
- * static screen-space dither mask, so each pixel is either ink or paper.
- */
+/** 1-bit dithered Earth + Moon, orbiting. */
 
-export const PAPER = 0xff0b0b0b; // ABGR (little-endian ImageData) for #0b0b0b
-export const INK = 0xffe9eff0; // #f0efe9
+import { DitherScene, TAU, fbm3, mulberry32, type Layout } from './dither';
 
-export type Layout = 'side' | 'center';
-
-const TAU = Math.PI * 2;
 const MOON_PERIOD = 26; // seconds per orbit
 const DAY_PERIOD = 60; // seconds per Earth rotation
 const AXIAL_TILT = 0.41; // radians (~23.4 deg)
@@ -23,56 +14,6 @@ const L = normalize([-0.86, -0.34, 0.38]);
 function normalize(v: [number, number, number]): [number, number, number] {
   const m = Math.hypot(v[0], v[1], v[2]);
   return [v[0] / m, v[1] / m, v[2] / m];
-}
-
-function mulberry32(seed: number) {
-  return () => {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function hash3(x: number, y: number, z: number, seed: number) {
-  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 2147483647) ^ seed;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-function valueNoise3(x: number, y: number, z: number, seed: number) {
-  const xi = Math.floor(x);
-  const yi = Math.floor(y);
-  const zi = Math.floor(z);
-  const fx = x - xi;
-  const fy = y - yi;
-  const fz = z - zi;
-  const u = fx * fx * (3 - 2 * fx);
-  const v = fy * fy * (3 - 2 * fy);
-  const w = fz * fz * (3 - 2 * fz);
-  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-  const c = (dx: number, dy: number, dz: number) => hash3(xi + dx, yi + dy, zi + dz, seed);
-  return lerp(
-    lerp(lerp(c(0, 0, 0), c(1, 0, 0), u), lerp(c(0, 1, 0), c(1, 1, 0), u), v),
-    lerp(lerp(c(0, 0, 1), c(1, 0, 1), u), lerp(c(0, 1, 1), c(1, 1, 1), u), v),
-    w,
-  );
-}
-
-function fbm3(x: number, y: number, z: number, octaves: number, seed: number) {
-  let sum = 0;
-  let amp = 0.5;
-  let norm = 0;
-  for (let i = 0; i < octaves; i++) {
-    sum += amp * valueNoise3(x, y, z, seed + i * 101);
-    norm += amp;
-    x *= 2.03;
-    y *= 2.03;
-    z *= 2.03;
-    amp *= 0.5;
-  }
-  return sum / norm;
 }
 
 function percentile(values: Float32Array, p: number) {
@@ -154,69 +95,35 @@ function buildMoon(): Texture {
   return tex;
 }
 
-type Star = { i: number; phase: number; rate: number };
 type Meteor = { x: number; y: number; vx: number; vy: number; life: number; age: number };
 
-export class OrbitRenderer {
-  private ctx: CanvasRenderingContext2D;
-  private image!: ImageData;
-  private out!: Uint32Array;
-  private buf!: Uint8Array;
-  private bg!: Uint8Array;
-  private mask!: Float32Array;
-  private twinklers: Star[] = [];
+export class OrbitScene extends DitherScene {
   private meteor: Meteor | null = null;
   private nextMeteor = 4;
   private earth = buildEarth();
   private moon = buildMoon();
-  private w = 0;
-  private h = 0;
   private cx = 0;
   private cy = 0;
   private R = 0;
 
-  constructor(private canvas: HTMLCanvasElement) {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('2d canvas unsupported');
-    this.ctx = ctx;
-  }
-
-  /** Size in dither pixels; layout decides where the Earth sits. */
-  resize(w: number, h: number, layout: Layout) {
-    this.w = w;
-    this.h = h;
-    this.canvas.width = w;
-    this.canvas.height = h;
-    this.image = this.ctx.createImageData(w, h);
-    this.out = new Uint32Array(this.image.data.buffer);
-    this.buf = new Uint8Array(w * h);
-
-    // `side`: Earth on the right, left column kept quiet for text. `center`: Earth fills the box.
+  /** `side`: Earth on the right of the text column. `center`: Earth fills the box. */
+  protected setup(layout: Layout, quietX: number) {
+    const { w, h } = this;
     const side = layout === 'side';
     this.cx = w * (side ? 0.71 : 0.5);
     this.cy = h * (side ? 0.48 : 0.52);
     this.R = side ? Math.min(h * 0.2, w * 0.11) : Math.min(w * 0.15, h * 0.2);
-
-    // R2 low-discrepancy ordered dither (Roberts): even stipple without Bayer's grid.
-    this.mask = new Float32Array(w * h);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const v = 0.7548776662 * x + 0.56984029 * y;
-        this.mask[y * w + x] = v - Math.floor(v);
-      }
-    }
-
-    this.buildSky(side ? w * 0.44 : 0);
+    this.addNebula(quietX);
+    // Andromeda-like galaxy in the corner opposite the nebula, clear of the Earth and orbit.
+    const unit = Math.min(w, h);
+    if (side) this.addHeroGalaxy(w * 0.89, h * 0.8, unit * 0.12, -0.45);
+    else this.addHeroGalaxy(w * 0.18, h * 0.13, unit * 0.1, -0.4);
   }
 
-  /** Stars + a stippled nebula band; columns left of `quietX` get only sparse stars. */
-  private buildSky(quietX: number) {
-    const { w, h, cx, cy } = this;
-    const rand = mulberry32(1337);
-    this.bg = new Uint8Array(w * h);
-    this.twinklers = [];
-
-    // Band runs diagonally from the top edge, passing just above-right of the Earth.
+  /** Stippled nebula band running diagonally from the top edge, just above-right of the Earth. */
+  private addNebula(quietX: number) {
+    const { w, h, cx, cy, bg } = this;
+    const rand = mulberry32(4242);
     const ax = cx - w * 0.2;
     const ay = 0;
     const bx = w;
@@ -229,22 +136,7 @@ export class OrbitRenderer {
         const falloff = Math.exp(-(d * d) / (2 * span * span));
         const cloud = fbm3(x * 0.02, y * 0.02, 0.5, 4, 3);
         const edge = Math.min(1, (x - quietX) / (w * 0.1));
-        if (rand() < falloff * edge * Math.max(0, cloud - 0.42) * 0.6) this.bg[y * w + x] = 1;
-      }
-    }
-
-    const count = Math.floor((w * h) / 380);
-    for (let s = 0; s < count; s++) {
-      const x = Math.floor(rand() * w);
-      const y = Math.floor(rand() * h);
-      const quiet = x < quietX;
-      if (quiet && rand() < 0.8) continue;
-      const i = y * w + x;
-      this.bg[i] = 1;
-      if (!quiet && rand() < 0.03 && x > 1 && y > 1 && x < w - 2 && y < h - 2) {
-        this.bg[i - 1] = this.bg[i + 1] = this.bg[i - w] = this.bg[i + w] = 1;
-      } else if (rand() < 0.12) {
-        this.twinklers.push({ i, phase: rand() * TAU, rate: 0.6 + rand() * 1.8 });
+        if (rand() < falloff * edge * Math.max(0, cloud - 0.42) * 0.36) bg[y * w + x] = 1;
       }
     }
   }
@@ -323,7 +215,7 @@ export class OrbitRenderer {
           buf[k] = 0;
           continue;
         }
-        if (OrbitRenderer.occluded(sx + nx * r, sy + ny * r, sz + nz * r, shadow.x, shadow.y, shadow.z, shadow.r)) {
+        if (OrbitScene.occluded(sx + nx * r, sy + ny * r, sz + nz * r, shadow.x, shadow.y, shadow.z, shadow.r)) {
           buf[k] = 0;
           continue;
         }
@@ -361,12 +253,6 @@ export class OrbitRenderer {
         const k = y * w + x;
         if (fall * fall * (0.15 + facing) * 0.55 > mask[k]) buf[k] = 1;
       }
-    }
-  }
-
-  private drawStarsTwinkle(t: number) {
-    for (const s of this.twinklers) {
-      if (Math.sin(t * s.rate + s.phase) > 0.55) this.buf[s.i] = 0;
     }
   }
 
@@ -408,10 +294,10 @@ export class OrbitRenderer {
     }
   }
 
-  render(t: number, dt = 0) {
-    const { buf, out, cx, cy, R } = this;
-    buf.set(this.bg);
-    this.drawStarsTwinkle(t);
+  render(t: number, dt: number) {
+    const { cx, cy, R } = this;
+    this.buf.set(this.bg);
+    this.twinkle(t);
     this.drawMeteor(t, dt);
     this.drawOrbitPath();
 
@@ -429,7 +315,6 @@ export class OrbitRenderer {
     this.drawSphere(cx, cy, 0, R, this.earth, spin, AXIAL_TILT, moon, moonBehind);
     if (!moonBehind) this.drawSphere(moon.x, moon.y, moon.z, moon.r, this.moon, moonSpin, 0.1, earth, true);
 
-    for (let i = 0; i < buf.length; i++) out[i] = buf[i] ? INK : PAPER;
-    this.ctx.putImageData(this.image, 0, 0);
+    this.present();
   }
 }

@@ -7,8 +7,17 @@
     color-scheme: dark;
   }
 
+  html {
+    @apply motion-safe:scroll-smooth lg:snap-y lg:snap-proximity;
+  }
+
   body {
     @apply bg-paper font-mono text-ink antialiased;
+  }
+
+  /* Text blocks sit on paper, shrink-wrapped, so stars never land between letters or words. */
+  main :is(h1, h2, p, ul, ol > li) {
+    @apply w-fit bg-paper;
   }
 
   ::selection {
@@ -27,6 +36,6 @@
 
   /* 1-bit hover: invert instead of fading. */
   .link {
-    @apply px-1 underline decoration-dotted underline-offset-4 hover:bg-ink hover:text-paper hover:no-underline;
+    @apply bg-paper px-1 underline decoration-dotted underline-offset-4 hover:bg-ink hover:text-paper hover:no-underline;
   }
 }
