@@ -157,27 +157,16 @@ export class OrbitScene extends DitherScene {
     return orbitOffset((t / MOON_PERIOD) * TAU + 2.2, this.R * 2.5, ORBIT_INCLINATION, ORBIT_ROLL);
   }
 
-  /**
-   * Dotted Moon orbit. The `back` pass (before the bodies) draws everything off the Earth's disc;
-   * the front pass (after) draws the near arc across the disc, each dot ringed with paper so it
-   * reads over the dithered surface.
-   */
-  private drawOrbitPath(pass: 'back' | 'front', moon?: { x: number; y: number; r: number }) {
+  /** Dotted Moon orbit, drawn behind the bodies and left off the Earth's disc. */
+  private drawOrbitPath() {
     const { w, h, buf, cx, cy, R } = this;
     const steps = Math.floor(R * 16);
     for (let s = 0; s < steps; s += 5) {
       const p = this.moonPosition((s / steps) * MOON_PERIOD);
       const x = Math.round(cx + p.x);
       const y = Math.round(cy + p.y);
-      if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) continue;
-      const overDisc = Math.hypot(p.x, p.y) < R + 3;
-      if (pass === 'back') {
-        if (!overDisc) buf[y * w + x] = 1;
-        continue;
-      }
-      if (!overDisc || p.z < 0) continue;
-      if (moon && Math.hypot(x - moon.x, y - moon.y) < moon.r + 3) continue;
-      this.stamp([[x, y]]);
+      if (x < 0 || y < 0 || x >= w || y >= h || Math.hypot(p.x, p.y) < R + 3) continue;
+      buf[y * w + x] = 1;
     }
   }
 
@@ -344,9 +333,10 @@ export class OrbitScene extends DitherScene {
     }
   }
 
+  /** Thin dithered atmosphere rim all the way round the disc, so the night side still reads as a sphere. */
   private drawAtmosphere() {
     const { w, h, buf, mask, cx, cy, R } = this;
-    const halo = Math.max(3, R * 0.09);
+    const halo = Math.max(2, R * 0.03);
     const outer = R + halo;
     const x0 = Math.max(0, Math.floor(cx - outer));
     const x1 = Math.min(w - 1, Math.ceil(cx + outer));
@@ -358,10 +348,9 @@ export class OrbitScene extends DitherScene {
         const dx = x + 0.5 - cx;
         const d = Math.hypot(dx, dy);
         if (d <= R || d > outer) continue;
-        const facing = Math.max(0, (dx / d) * L[0] + (dy / d) * L[1]);
         const fall = 1 - (d - R) / halo;
         const k = y * w + x;
-        if (fall * fall * (0.15 + facing) * 0.55 > mask[k]) buf[k] = 1;
+        if (fall * 0.55 > mask[k]) buf[k] = 1;
       }
     }
   }
@@ -408,8 +397,9 @@ export class OrbitScene extends DitherScene {
     const { cx, cy, R } = this;
     this.buf.set(this.bg);
     this.twinkle(t);
+    this.paintGalaxies(this.buf, t);
     this.drawMeteor(t, dt);
-    this.drawOrbitPath('back');
+    this.drawOrbitPath();
 
     const mp = this.moonPosition(t);
     const depth = 1 + (mp.z / (R * 2.5)) * 0.1;
@@ -422,9 +412,8 @@ export class OrbitScene extends DitherScene {
     const moonBehind = mp.z < 0;
     if (moonBehind) this.drawSphere(moon.x, moon.y, moon.z, moon.r, this.moon, moonSpin, 0.1, earth, false);
     this.drawAtmosphere();
-    this.drawSphere(cx, cy, 0, R, this.earth, spin, AXIAL_TILT, moon, moonBehind);
+    this.drawSphere(cx, cy, 0, R, this.earth, spin, AXIAL_TILT, moon, false);
     if (!moonBehind) this.drawSphere(moon.x, moon.y, moon.z, moon.r, this.moon, moonSpin, 0.1, earth, true);
-    this.drawOrbitPath('front', moonBehind ? undefined : moon);
 
     this.drawISS(t, moon);
     this.drawVehicles(t, moon);

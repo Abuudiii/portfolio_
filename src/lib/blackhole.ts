@@ -16,9 +16,11 @@ const DISK_OUT = 9.5;
 const TILT = 0.16; // camera elevation above the disk plane (radians)
 const ROLL = -0.2; // on-screen tilt of the disk
 const TRACE_B = 12; // impact parameter below which rays are integrated
+const TRACE_BLEND = 1.5; // width (Rs) of the band where traced lensing eases into the analytic one
 const SOURCE_DIST = 20; // hole-to-starfield distance; Einstein ring radius = sqrt(2 * SOURCE_DIST)
 const CAMERA_Z = 20;
 const SPIN = 2.4; // Keplerian angular speed scale: omega = SPIN * r^-1.5 rad/s
+const SKY_DRIFT = 4; // background drift past the hole, in dither pixels per second
 const TEX_R = 96;
 const TEX_PHI = 512;
 
@@ -109,12 +111,26 @@ function trace(u: number, v: number): Hit {
 export class BlackHoleScene extends DitherScene {
   protected starSeed = 2026;
   private tex = buildDiskTexture();
+  /**
+   * Source-sky point each screen pixel sees through the lens. `srcY` stays unrounded so the drift
+   * carries pixels across source rows at different moments (arcs stream instead of stepping);
+   * it is -1 for the horizon and disk.
+   */
+  private srcX = new Uint16Array(0);
+  private srcY = new Float32Array(0);
+  /** Source sky for the current frame (stars with twinkle applied), resampled into `buf`. */
+  private sky = new Uint8Array(0);
   private diskIdx = new Int32Array(0);
   private diskRow = new Uint16Array(0);
   private diskPhi = new Float32Array(0);
   private diskOmega = new Float32Array(0);
   private diskWeight = new Float32Array(0);
 
+  /**
+   * Ray-trace the lens once: for every screen pixel, which point of the background sky it sees
+   * (or the disk / horizon). `bg` stays the unlensed source sky; each frame drifts it slowly
+   * upward and looks it up through this map, so stars stream past and bend into arcs live.
+   */
   protected setup(layout: Layout, quietX: number) {
     const { w, h } = this;
     const side = layout === 'side';
@@ -122,9 +138,8 @@ export class BlackHoleScene extends DitherScene {
     const cy = h * (side ? 0.5 : 0.52);
     const rs = side ? Math.min(h * 0.046, w * 0.027) : Math.min(w * 0.035, h * 0.05);
 
-    const stars = this.bg;
-    const lensed = new Uint8Array(w * h);
-    const sourceOf = new Int32Array(w * h);
+    const srcX = new Uint16Array(w * h);
+    const srcY = new Float32Array(w * h);
     const idx: number[] = [];
     const row: number[] = [];
     const phis: number[] = [];
@@ -134,10 +149,10 @@ export class BlackHoleScene extends DitherScene {
     for (let py = 0; py < h; py++) {
       for (let px = 0; px < w; px++) {
         const k = py * w + px;
-        // The text column keeps its sparse sky: lensing would pull in dense stars from elsewhere.
+        // The text column sees the sky unlensed, keeping it calm behind the copy.
         if (px < quietX) {
-          sourceOf[k] = k;
-          lensed[k] = stars[k];
+          srcX[k] = px;
+          srcY[k] = py + 0.5;
           continue;
         }
         // Screen offset -> hole-plane coordinates (undo the roll, scale to Rs).
@@ -146,21 +161,18 @@ export class BlackHoleScene extends DitherScene {
         const u = dx * COS_ROLL + dy * SIN_ROLL;
         const v = -dx * SIN_ROLL + dy * COS_ROLL;
         const b2 = u * u + v * v;
-        let su: number;
-        let sv: number;
-        if (b2 >= TRACE_B * TRACE_B) {
-          // Weak field: source = image * (1 - 2 L / b^2).
-          const s = 1 - (2 * SOURCE_DIST) / b2;
-          su = u * s;
-          sv = v * s;
-        } else {
+        // Weak field: source = image * (1 - 2 L / b^2).
+        const s = 1 - (2 * SOURCE_DIST) / b2;
+        let su = u * s;
+        let sv = v * s;
+        if (b2 < TRACE_B * TRACE_B) {
           const hit = trace(u, v);
           if (hit.kind === 'horizon') {
-            sourceOf[k] = -1;
+            srcY[k] = -1;
             continue;
           }
           if (hit.kind === 'disk') {
-            sourceOf[k] = -1;
+            srcY[k] = -1;
             idx.push(k);
             row.push(Math.min(TEX_R - 1, Math.floor(((hit.r - DISK_IN) / (DISK_OUT - DISK_IN)) * TEX_R)));
             phis.push(hit.phi);
@@ -168,32 +180,31 @@ export class BlackHoleScene extends DitherScene {
             weight.push(hit.weight);
             continue;
           }
-          su = hit.sx;
-          sv = hit.sy;
+          // The traced and analytic answers differ by a few pixels at TRACE_B; ease from one to
+          // the other over the last TRACE_BLEND Rs so the switch leaves no ring-shaped seam.
+          const f = Math.min(1, Math.max(0, (TRACE_B - Math.sqrt(b2)) / TRACE_BLEND));
+          const g = f * f * (3 - 2 * f);
+          su += (hit.sx - su) * g;
+          sv += (hit.sy - sv) * g;
         }
-        // Hole-plane source -> screen pixel (redo the roll).
+        // Lensing eases to zero over the band just right of the text column, so the unlensed
+        // column joins the lensed sky without a seam.
+        const e = Math.min(1, Math.max(0, (px - quietX) / (w * 0.15)));
+        const fade = e * e * (3 - 2 * e);
+        su = u + (su - u) * fade;
+        sv = v + (sv - v) * fade;
+        // Hole-plane source -> screen pixel (redo the roll). Off-screen sources wrap around,
+        // so the sky never runs out of stars.
         const sx = cx + (su * COS_ROLL - sv * SIN_ROLL) * rs;
         const sy = cy + (su * SIN_ROLL + sv * COS_ROLL) * rs;
-        // Sources that land off-screen wrap around, so the sky never runs out of stars.
-        const src = (((Math.round(sy) % h) + h) % h) * w + (((Math.round(sx) % w) + w) % w);
-        sourceOf[k] = src;
-        lensed[k] = stars[src];
+        srcX[k] = ((Math.round(sx) % w) + w) % w;
+        srcY[k] = (((sy + 0.5) % h) + h) % h;
       }
     }
 
-    // Twinklers follow their star to wherever lensing moved it.
-    const byIndex = new Map(this.twinklers.map((s) => [s.i, s]));
-    this.twinklers = [];
-    for (let k = 0; k < sourceOf.length; k++) {
-      const s = sourceOf[k] >= 0 ? byIndex.get(sourceOf[k]) : undefined;
-      if (s) this.twinklers.push({ ...s, i: k });
-    }
-
-    this.bg = lensed;
-    // Drawn after lensing on purpose: a far corner galaxy reads better undistorted.
-    const unit = Math.min(w, h);
-    if (side) this.addHeroGalaxy(w * 0.88, h * 0.76, unit * 0.1, 0.5);
-    else this.addHeroGalaxy(w * 0.82, h * 0.12, unit * 0.09, 0.45);
+    this.srcX = srcX;
+    this.srcY = srcY;
+    this.sky = new Uint8Array(w * h);
     this.diskIdx = Int32Array.from(idx);
     this.diskRow = Uint16Array.from(row);
     this.diskPhi = Float32Array.from(phis);
@@ -202,9 +213,22 @@ export class BlackHoleScene extends DitherScene {
   }
 
   render(t: number) {
-    const { buf, mask, tex, diskIdx, diskRow, diskPhi, diskOmega, diskWeight } = this;
-    buf.set(this.bg);
-    this.twinkle(t);
+    const { w, h, buf, mask, sky, srcX, srcY, tex, diskIdx, diskRow, diskPhi, diskOmega, diskWeight } = this;
+    // Twinkle in the source sky, so a star's lensed images all blink together.
+    sky.set(this.bg);
+    for (const s of this.twinklers) if (Math.sin(t * s.rate + s.phase) > 0.55) sky[s.i] = 0;
+    // The background drifts slowly upward relative to the hole.
+    const drift = (t * SKY_DRIFT) % h;
+    for (let k = 0; k < buf.length; k++) {
+      const sy = srcY[k];
+      if (sy < 0) {
+        buf[k] = 0;
+        continue;
+      }
+      let y = Math.floor(sy + drift);
+      if (y >= h) y -= h;
+      buf[k] = sky[y * w + srcX[k]];
+    }
     for (let i = 0; i < diskIdx.length; i++) {
       let a = (diskPhi[i] - diskOmega[i] * t) / TAU;
       a -= Math.floor(a);

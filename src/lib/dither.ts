@@ -64,6 +64,21 @@ export function fbm3(x: number, y: number, z: number, octaves: number, seed: num
 type Twinkler = { i: number; phase: number; rate: number };
 
 /**
+ * A galaxy's footprint, precomputed so it can be repainted every frame with its spiral pattern
+ * rotated: per pixel the static brightness (bulge + lane-cut disk), the disk weight the arms
+ * modulate, and the arm phase. `solid` pixels own their spot (stars behind the body are hidden).
+ */
+type Galaxy = {
+  idx: Int32Array;
+  bulge: Float32Array;
+  disk: Float32Array;
+  phase: Float32Array;
+  solid: Uint8Array;
+  omega: number;
+  contrast: number;
+};
+
+/**
  * Owns the canvas, the 1-bit frame buffer, the dither mask and a starfield.
  * Subclasses place their subject in `setup` and draw it in `render`.
  */
@@ -75,6 +90,8 @@ export abstract class DitherScene {
   protected bg!: Uint8Array;
   protected mask!: Float32Array;
   protected twinklers: Twinkler[] = [];
+  /** Galaxies painted over the sky each frame by `paintGalaxies`. */
+  protected galaxies: Galaxy[] = [];
   protected w = 0;
   protected h = 0;
   /** Override per scene so stacked panels don't show the same sky. */
@@ -120,6 +137,7 @@ export abstract class DitherScene {
     const rand = mulberry32(this.starSeed);
     this.bg = new Uint8Array(w * h);
     this.twinklers = [];
+    this.galaxies = [];
     const count = Math.floor((w * h) / 450);
     for (let s = 0; s < count; s++) {
       const x = Math.floor(rand() * w);
@@ -133,14 +151,6 @@ export abstract class DitherScene {
       } else if (rand() < 0.12) {
         this.twinklers.push({ i, phase: rand() * TAU, rate: 0.6 + rand() * 1.8 });
       }
-    }
-
-    // Small, distant galaxies; each scene adds one large hero galaxy where its layout has room.
-    const unit = Math.min(w, h);
-    const left = quietX + w * 0.08;
-    for (let g = 0; g < 3; g++) {
-      const size = unit * (0.022 + rand() * 0.012);
-      this.addGalaxy(left + rand() * (w - left), rand() * h, size, 0.3 + rand() * 0.4, rand() * Math.PI);
     }
     // The text column gets a few sparkles instead: galaxies there compete with the icons.
     if (quietX > 0) {
@@ -163,23 +173,33 @@ export abstract class DitherScene {
   }
 
   /**
-   * A distant galaxy rendered with the ordered dither: a solid bulge and a disk
-   * that fades into stipple. Big enough ones also get spiral structure and dark
-   * dust lanes on the near side (the Andromeda look). `size` is the semi-major
-   * axis in pixels, `axis` the apparent minor/major ratio from inclination.
+   * A distant galaxy rendered with the ordered dither: a solid bulge and a disk that fades into
+   * stipple, with two trailing spiral arms that slowly rotate. Big enough ones also get dark dust
+   * lanes on the near side (the Andromeda look). `size` is the semi-major axis in pixels, `axis`
+   * the apparent minor/major ratio from inclination.
    */
   private addGalaxy(gx: number, gy: number, size: number, axis: number, angle: number) {
-    const { w, h, bg, mask } = this;
+    const { w, h } = this;
     const ca = Math.cos(angle);
     const sa = Math.sin(angle);
     const detailed = size >= 24;
     const reach = Math.ceil(size * 1.2);
+    // Deterministic per-galaxy spin direction and period (about a minute or two per turn).
+    const hash = Math.sin(gx * 12.9898 + gy * 78.233) * 43758.5453;
+    const dir = hash - Math.floor(hash) < 0.5 ? 1 : -1;
+    const period = 70 + (hash - Math.floor(hash)) * 50;
+    const wind = (detailed ? 3 : 2.2) * dir;
     // Twinkling stars under the galaxy would blink holes into it.
     this.twinklers = this.twinklers.filter(({ i }) => {
       const dx = (i % w) - gx;
       const dy = Math.floor(i / w) - gy;
       return Math.hypot((dx * ca + dy * sa) / size, (-dx * sa + dy * ca) / (size * axis)) > 1.15;
     });
+    const idx: number[] = [];
+    const bulges: number[] = [];
+    const disks: number[] = [];
+    const phases: number[] = [];
+    const solid: number[] = [];
     for (let dy = -reach; dy <= reach; dy++) {
       for (let dx = -reach; dx <= reach; dx++) {
         const x = Math.round(gx + dx);
@@ -189,18 +209,43 @@ export abstract class DitherScene {
         const v = (-dx * sa + dy * ca) / size;
         const r = Math.hypot(u, v / axis);
         if (r > 1.15) continue;
-        const bulge = 1.6 * Math.exp(-((r / 0.14) ** 2)) + 0.5 * Math.exp(-r / 0.18);
         let disk = 1.05 * Math.exp(-r / 0.42) * Math.min(1, (1.15 - r) / 0.35);
         if (detailed) {
-          disk *= 0.85 + 0.3 * Math.cos(2 * (Math.atan2(v / axis, u) - 3 * Math.log(r + 0.05)));
           const nearSide = v > 0 ? 1 : 0.3;
           for (const lane of [0.4, 0.62]) disk *= 1 - 0.9 * nearSide * Math.exp(-(((r - lane) / 0.045) ** 2));
         }
-        const k = y * w + x;
-        const on = bulge + disk > mask[k];
+        idx.push(y * w + x);
+        bulges.push(1.6 * Math.exp(-((r / 0.14) ** 2)) + 0.5 * Math.exp(-r / 0.18));
+        disks.push(disk);
+        phases.push(2 * (Math.atan2(v / axis, u) - wind * Math.log(r + 0.05)));
         // Inside the bright body the galaxy replaces the sky, so foreground stars don't clutter it.
-        if (r < 0.85) bg[k] = on ? 1 : 0;
-        else if (on) bg[k] = 1;
+        solid.push(r < 0.85 ? 1 : 0);
+      }
+    }
+    this.galaxies.push({
+      idx: Int32Array.from(idx),
+      bulge: Float32Array.from(bulges),
+      disk: Float32Array.from(disks),
+      phase: Float32Array.from(phases),
+      solid: Uint8Array.from(solid),
+      // Negative relative to the winding, so the arms trail the rotation.
+      omega: (-dir * TAU) / period,
+      contrast: detailed ? 0.55 : 0.5,
+    });
+  }
+
+  /** Paint galaxies into `target` with their arms rotated to time `t`. */
+  protected paintGalaxies(target: Uint8Array, t: number) {
+    const { mask } = this;
+    for (const g of this.galaxies) {
+      const turn = 2 * g.omega * t;
+      const base = 1 - g.contrast;
+      for (let i = 0; i < g.idx.length; i++) {
+        const k = g.idx[i];
+        const value = g.bulge[i] + g.disk[i] * (base + g.contrast * Math.cos(g.phase[i] - turn));
+        const on = value > mask[k];
+        if (g.solid[i]) target[k] = on ? 1 : 0;
+        else if (on) target[k] = 1;
       }
     }
   }
