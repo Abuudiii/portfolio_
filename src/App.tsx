@@ -57,14 +57,18 @@ export default function App() {
           </p>
         </header>
 
-        {/* Wide enough that every summary stays on one line, so all rows share one height. */}
-        <section aria-labelledby="experience" className="max-w-[34rem]">
+        <section aria-labelledby="experience" className="max-w-[30rem]">
           <h2 id="experience" className="label mb-4">
             Experience
           </h2>
           <ol className="space-y-3">
             {experience.map((job) => (
-              <li key={job.company} className="grid grid-cols-[3rem_auto_1fr] items-center gap-x-4 text-[13px] leading-snug">
+              // Every row reserves room for a name plus two summary lines, so rows match even where
+              // narrow screens wrap some summaries; on desktop each summary fits on one line.
+              <li
+                key={job.company}
+                className="grid min-h-[3.4rem] grid-cols-[3rem_auto_1fr] items-center gap-x-4 text-[13px] leading-snug lg:min-h-0"
+              >
                 <span className="tabular-nums">{job.when}</span>
                 <PixelIcon name={job.icon} />
                 <span>
