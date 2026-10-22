@@ -1,12 +1,24 @@
-/** 1-bit dithered Earth + Moon, orbiting. */
+/** 1-bit dithered Earth + Moon, orbiting, with the ISS and the occasional Starship mission. */
 
 import { DitherScene, TAU, fbm3, mulberry32, type Layout } from './dither';
+import { VEHICLE_LENGTH, issOffset, missionAt, orbitOffset } from './spaceflight';
 
 const MOON_PERIOD = 26; // seconds per orbit
 const DAY_PERIOD = 60; // seconds per Earth rotation
 const AXIAL_TILT = 0.41; // radians (~23.4 deg)
 const ORBIT_INCLINATION = 0.3; // camera elevation above the orbital plane
 const ORBIT_ROLL = -0.16; // tilt of the orbit ellipse on screen
+
+// ISS silhouette: '#' truss (solid), 'p' solar arrays and 'm' modules (shaded and dithered).
+const ISS_SPRITE = [
+  '.pp.pp.....pp.pp.',
+  '.pp.pp.....pp.pp.',
+  '.pp.pp..m..pp.pp.',
+  '#################',
+  '.pp.pp.mmm.pp.pp.',
+  '.pp.pp..m..pp.pp.',
+  '.pp.pp.....pp.pp.',
+];
 
 // Light from the left and slightly above, mostly side-on so the terminator reads clearly.
 const L = normalize([-0.86, -0.34, 0.38]);
@@ -142,27 +154,125 @@ export class OrbitScene extends DitherScene {
   }
 
   private moonPosition(t: number) {
-    const theta = (t / MOON_PERIOD) * TAU + 2.2;
-    const a = this.R * 2.5;
-    const ox = Math.cos(theta) * a;
-    const oz = Math.sin(theta) * a;
-    const y1 = oz * Math.sin(ORBIT_INCLINATION);
-    const z1 = oz * Math.cos(ORBIT_INCLINATION);
-    const cr = Math.cos(ORBIT_ROLL);
-    const sr = Math.sin(ORBIT_ROLL);
-    return { x: ox * cr - y1 * sr, y: ox * sr + y1 * cr, z: z1 };
+    return orbitOffset((t / MOON_PERIOD) * TAU + 2.2, this.R * 2.5, ORBIT_INCLINATION, ORBIT_ROLL);
   }
 
-  private drawOrbitPath() {
+  /**
+   * Dotted Moon orbit. The `back` pass (before the bodies) draws everything off the Earth's disc;
+   * the front pass (after) draws the near arc across the disc, each dot ringed with paper so it
+   * reads over the dithered surface.
+   */
+  private drawOrbitPath(pass: 'back' | 'front', moon?: { x: number; y: number; r: number }) {
     const { w, h, buf, cx, cy, R } = this;
     const steps = Math.floor(R * 16);
     for (let s = 0; s < steps; s += 5) {
       const p = this.moonPosition((s / steps) * MOON_PERIOD);
       const x = Math.round(cx + p.x);
       const y = Math.round(cy + p.y);
-      if (x < 0 || y < 0 || x >= w || y >= h) continue;
-      if (p.z < 0 && Math.hypot(p.x, p.y) < R + 3) continue;
-      buf[y * w + x] = 1;
+      if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) continue;
+      const overDisc = Math.hypot(p.x, p.y) < R + 3;
+      if (pass === 'back') {
+        if (!overDisc) buf[y * w + x] = 1;
+        continue;
+      }
+      if (!overDisc || p.z < 0) continue;
+      if (moon && Math.hypot(x - moon.x, y - moon.y) < moon.r + 3) continue;
+      this.stamp([[x, y]]);
+    }
+  }
+
+  /** Ink pixels with a one-pixel paper halo, so small sprites read on top of anything. */
+  private stamp(points: [number, number][], hidden?: (x: number, y: number) => boolean) {
+    const { w, h, buf } = this;
+    const visible = points.filter(([x, y]) => x >= 1 && y >= 1 && x < w - 1 && y < h - 1 && !hidden?.(x, y));
+    for (const [x, y] of visible) {
+      for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) if (!hidden?.(x + i, y + j)) buf[(y + j) * w + x + i] = 0;
+    }
+    for (const [x, y] of visible) buf[y * w + x] = 1;
+  }
+
+  /**
+   * Hide pixels covered by a nearer body: the Earth when the craft is behind it (z < 0), or the
+   * Moon when the Moon is closer to the viewer than the craft.
+   */
+  private occluder(z: number, moon: { x: number; y: number; z: number; r: number }) {
+    const { cx, cy, R } = this;
+    return (x: number, y: number) =>
+      (z < 0 && Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < R + 2) ||
+      (moon.z > z && Math.hypot(x + 0.5 - moon.x, y + 0.5 - moon.y) < moon.r + 2);
+  }
+
+  /**
+   * The ISS sprite on whole pixels so its lines stay crisp. The truss is solid; modules and solar
+   * arrays are shaded and dithered like the planets, by how sunlit the station is (dense on the
+   * day side, sparse on the night side) with a left-to-right falloff from the sun. As the station
+   * moves over the static dither mask the array texture shimmers. A paper outline keeps it
+   * readable over the planet.
+   */
+  private drawISS(t: number, moon: { x: number; y: number; z: number; r: number }) {
+    const { w, h, buf, mask, cx, cy, R } = this;
+    const p = issOffset(t, R);
+    const sw = ISS_SPRITE[0].length;
+    const sh = ISS_SPRITE.length;
+    const ox = Math.round(cx + p.x - sw / 2);
+    const oy = Math.round(cy + p.y - sh / 2);
+    const toward = normalize([p.x, p.y, p.z]);
+    const sun = Math.max(0, toward[0] * L[0] + toward[1] * L[1] + toward[2] * L[2]);
+    const hidden = this.occluder(p.z, moon);
+    const inside = (x: number, y: number) => x >= 1 && y >= 1 && x < w - 1 && y < h - 1 && !hidden(x, y);
+
+    for (let j = 0; j < sh; j++) {
+      for (let i = 0; i < sw; i++) {
+        if (ISS_SPRITE[j][i] === '.') continue;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) if (inside(ox + i + dx, oy + j + dy)) buf[(oy + j + dy) * w + ox + i + dx] = 0;
+        }
+      }
+    }
+    for (let j = 0; j < sh; j++) {
+      for (let i = 0; i < sw; i++) {
+        const c = ISS_SPRITE[j][i];
+        const x = ox + i;
+        const y = oy + j;
+        if (c === '.' || !inside(x, y)) continue;
+        const falloff = 1 - 0.12 * (i / (sw - 1));
+        // High floors keep the arrays legible in Earth's shadow; sunlight only densifies the dither.
+        const value = c === '#' ? 1 : (c === 'm' ? 0.8 + 0.2 * sun : 0.62 + 0.3 * sun) * falloff;
+        const k = y * w + x;
+        buf[k] = value > mask[k] ? 1 : 0;
+      }
+    }
+  }
+
+  /** Rockets as two-pixel-wide oriented bodies with a pointed nose, plus a flickering plume or reentry trail. */
+  private drawVehicles(t: number, moon: { x: number; y: number; z: number; r: number }) {
+    const { cx, cy, R } = this;
+    const flicker = Math.floor(t * 18) % 2;
+    // Rockets fly close to the limb or ride the ISS, so a depth just above the surface is close enough.
+    const hidden = this.occluder(0, moon);
+    for (const v of missionAt(t, R)) {
+      const len = VEHICLE_LENGTH[v.kind];
+      const points: [number, number][] = [];
+      // Position `i` pixels behind the nose, `side` pixels across the body.
+      const at = (i: number, side: number): [number, number] => [
+        Math.round(cx + v.x - v.dx * i - v.dy * side),
+        Math.round(cy + v.y - v.dy * i + v.dx * side),
+      ];
+      for (let i = 0; i < len; i++) {
+        points.push(at(i, 0));
+        if (i > 0) points.push(at(i, 1));
+      }
+      if (v.burning) {
+        const plume = 2 + flicker;
+        for (let i = len; i < len + plume; i++) points.push(at(i, (i + flicker) % 2 ? 1 : 0));
+        points.push(at(len, 0), at(len, 1));
+      }
+      if (v.plasma) {
+        // Glow just ahead of the nose, then a broken streak trailing behind.
+        points.push(at(-2, 0), at(-2, 1));
+        for (let i = len + 1; i <= len + 10; i += 2) if ((i + flicker) % 4 !== 0) points.push(at(i, i % 3 === 0 ? 1 : 0));
+      }
+      this.stamp(points, hidden);
     }
   }
 
@@ -299,7 +409,7 @@ export class OrbitScene extends DitherScene {
     this.buf.set(this.bg);
     this.twinkle(t);
     this.drawMeteor(t, dt);
-    this.drawOrbitPath();
+    this.drawOrbitPath('back');
 
     const mp = this.moonPosition(t);
     const depth = 1 + (mp.z / (R * 2.5)) * 0.1;
@@ -314,7 +424,10 @@ export class OrbitScene extends DitherScene {
     this.drawAtmosphere();
     this.drawSphere(cx, cy, 0, R, this.earth, spin, AXIAL_TILT, moon, moonBehind);
     if (!moonBehind) this.drawSphere(moon.x, moon.y, moon.z, moon.r, this.moon, moonSpin, 0.1, earth, true);
+    this.drawOrbitPath('front', moonBehind ? undefined : moon);
 
+    this.drawISS(t, moon);
+    this.drawVehicles(t, moon);
     this.present();
   }
 }
