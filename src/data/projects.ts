@@ -11,7 +11,7 @@ export type Project = {
 export const projects: Project[] = [
   {
     name: 'Exoplanets',
-    context: 'with Mika Vohl',
+    context: "NASA's TESS satellite data",
     href: 'https://github.com/MikaVohl/exoplanets',
     icon: 'telescope',
     summary:
