@@ -1,6 +1,6 @@
 export const profile = {
   name: 'Abdullah Sheikh',
-  tagline: 'Software engineer working close to the metal: GPU kernels, drivers, and the infrastructure underneath.',
+  tagline: 'Software engineer who loves working low-level.',
   location: 'Calgary, AB',
   school: 'CS @ UCalgary, 2028',
   email: 'sheikh07abdullah@gmail.com',
