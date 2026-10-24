@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import PixelIcon from './components/PixelIcon';
 import Scene from './components/Scene';
+import Sun from './components/Sun';
 import { experience } from './data/experience';
 import { profile } from './data/profile';
 import { projects } from './data/projects';
@@ -56,6 +57,9 @@ export default function App() {
             {profile.location} <span aria-hidden="true">/</span> {profile.school}
           </p>
         </header>
+
+        {/* Desktop only: on narrow screens the scene sits above the text and the Sun would float in the copy. */}
+        <Sun className="hidden self-start lg:ml-24 lg:block" />
 
         <section aria-labelledby="experience" className="max-w-[30rem]">
           <h2 id="experience" className="label mb-4">

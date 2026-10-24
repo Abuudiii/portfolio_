@@ -1,7 +1,9 @@
 /**
- * The ISS in low orbit, plus a recurring Starship mission: launch from Earth's
- * limb, booster separation and boostback to the pad, ship rendezvous and
- * docking with the ISS, then undock, reentry and landing at the pad.
+ * The ISS in low orbit, the Moon's orbit, and a recurring Starship mission: launch from Earth's
+ * limb, booster separation and boostback to the pad, ship rendezvous with its target, a short
+ * stay, then the trip back, reentry and landing at the pad. Missions alternate between the ISS
+ * (docking under the central module) and the Moon (landing on its upper limb); the flight is
+ * otherwise identical.
  *
  * Everything is a pure function of time. Offsets are relative to Earth's
  * centre in dither pixels (x right, y down, z toward the viewer), scaled by the
@@ -30,6 +32,16 @@ const DOCK_GAP = 4.5; // pixels from the ISS centre down to the docked ship's no
 // left-to-right across Earth's face, so the pad (under its earlier position) is on the lit side.
 const DOCK_PHASE = Math.PI / 2 + 0.9;
 
+// 24 s per orbit: two mission slots (96 s) are exactly four lunar orbits, so every Moon run finds
+// the Moon at the same point. MOON_PHASE puts that point front-left of the Earth, on the sunlit side.
+export const MOON_PERIOD = 24; // seconds per orbit
+const MOON_PHASE = 2 * Math.PI - 0.14; // orbital angle at t = 0
+const MOON_DISTANCE = 2.5; // orbit radius in Earth radii
+const MOON_SIZE = 0.27; // Moon radius in Earth radii
+// Moon missions set down on the Moon's upper limb on the Earth-facing (shadowed) side, so the
+// bright ship stands out against dark ground and sky.
+const LANDING_DIR = { x: 0.45, y: -0.89 };
+
 /** A point on a circular orbit of radius `a`, seen from above the plane by `inclination`, rolled on screen. */
 export function orbitOffset(theta: number, a: number, inclination: number, roll: number): Vec3 {
   const ox = Math.cos(theta) * a;
@@ -46,6 +58,15 @@ export function issOffset(t: number, R: number): Vec3 {
   return orbitOffset(theta, R * ISS_ALTITUDE, ISS_INCLINATION, ISS_ROLL);
 }
 
+export function moonOffset(t: number, R: number): Vec3 {
+  return orbitOffset((t / MOON_PERIOD) * TAU + MOON_PHASE, R * MOON_DISTANCE, 0.3, -0.16);
+}
+
+/** On-screen Moon radius, a touch larger on the near side of its orbit. */
+export function moonRadius(z: number, R: number) {
+  return R * MOON_SIZE * (1 + (z / (R * MOON_DISTANCE)) * 0.1);
+}
+
 export type Vehicle = {
   kind: 'stack' | 'booster' | 'ship';
   x: number;
@@ -57,6 +78,8 @@ export type Vehicle = {
   burning: boolean;
   /** Reentry plasma streaming behind the direction of travel. */
   plasma: boolean;
+  /** Depth for occlusion by the Earth and Moon; 0 is the Earth's limb. */
+  z: number;
 };
 
 /** Body length in dither pixels; the stack is booster + ship. */
@@ -83,24 +106,42 @@ const unit = (p: P): P => {
   return { x: p.x / m, y: p.y / m };
 };
 
+/** Near the Moon a ship counts as in front of it, so the Moon doesn't clip its tail or plume. */
+function frontOfMoon(t: number, p: P, z: number, R: number) {
+  const moon = moonOffset(t, R);
+  return Math.hypot(p.x - moon.x, p.y - moon.y) < moonRadius(moon.z, R) * 2.5 ? Math.max(z, moon.z + 1) : z;
+}
+
 /** Vehicles in flight at time t (empty between missions). */
 export function missionAt(t: number, R: number): Vehicle[] {
   const since = t - FIRST_LAUNCH;
   if (since < 0) return [];
+  const slot = Math.floor(since / (MISSION_EVERY * ISS_PERIOD));
   const m = since % (MISSION_EVERY * ISS_PERIOD);
   const start = t - m;
   const dockAt = start + ASCENT;
   const undockAt = dockAt + DOCKED;
   if (m > ASCENT + DOCKED + RETURN + PARKED) return [];
+  // Every other mission flies to the Moon instead of the ISS.
+  const toMoon = slot % 2 === 1;
 
   // Pad on the limb under where the ISS was a little before docking, so the ascent arcs to catch up.
   // Vehicles are positioned by their nose; on the pad the engines sit on the surface, nose pointing out.
   const n = unit(issOffset(dockAt - 2.4, R));
   const onPad = (kind: Vehicle['kind']) => ({ x: n.x * (R + VEHICLE_LENGTH[kind]), y: n.y * (R + VEHICLE_LENGTH[kind]) });
   const pad = onPad('stack');
-  // Docked pose: nose-up against the port under the central module (sprite rows run horizontally).
-  const docked = (iss: Vec3) => ({ x: iss.x, y: iss.y + DOCK_GAP, dx: 0, dy: -1 });
-  const dockPoint = docked(issOffset(dockAt, R));
+  // Docked pose at time `at`: nose-up against the port under the ISS's central module (sprite rows
+  // run horizontally), or engines on the Moon's upper limb with the nose pointing straight out.
+  const docked = (at: number) => {
+    if (!toMoon) {
+      const iss = issOffset(at, R);
+      return { x: iss.x, y: iss.y + DOCK_GAP, dx: 0, dy: -1, z: 0 };
+    }
+    const moon = moonOffset(at, R);
+    const d = moonRadius(moon.z, R) + VEHICLE_LENGTH.ship;
+    return { x: moon.x + LANDING_DIR.x * d, y: moon.y + LANDING_DIR.y * d, dx: LANDING_DIR.x, dy: LANDING_DIR.y, z: moon.z + 1 };
+  };
+  const dockPoint = docked(dockAt);
   const up = (k: number) => ({ x: n.x * R * (1 + k), y: n.y * R * (1 + k) });
   const ascent = [pad, up(0.9), dockPoint] as const;
   const out: Vehicle[] = [];
@@ -114,7 +155,7 @@ export function missionAt(t: number, R: number): Vehicle[] {
     const p = bezier(...back, smooth(s));
     const travel = bezierTangent(...back, Math.max(0.02, smooth(s)));
     // Engines point along the direction of travel, so the nose points back up.
-    out.push({ kind: 'booster', ...p, dx: -travel.x, dy: -travel.y, burning: s < 0.2 || (s > 0.75 && s < 1), plasma: false });
+    out.push({ kind: 'booster', ...p, dx: -travel.x, dy: -travel.y, burning: s < 0.2 || (s > 0.75 && s < 1), plasma: false, z: 0 });
   }
 
   if (m < ASCENT) {
@@ -122,12 +163,13 @@ export function missionAt(t: number, R: number): Vehicle[] {
     const p = bezier(...ascent, u);
     const dir = bezierTangent(...ascent, u);
     const kind = m < SEPARATION ? 'stack' : 'ship';
-    out.push({ kind, ...p, dx: dir.x, dy: dir.y, burning: m < SEPARATION || m / ASCENT < 0.85, plasma: false });
+    const z = toMoon ? frontOfMoon(t, p, dockPoint.z * u, R) : 0;
+    out.push({ kind, ...p, dx: dir.x, dy: dir.y, burning: m < SEPARATION || m / ASCENT < 0.85, plasma: false, z });
   } else if (t < undockAt) {
-    out.push({ kind: 'ship', ...docked(issOffset(t, R)), burning: false, plasma: false });
+    out.push({ kind: 'ship', ...docked(t), burning: false, plasma: false });
   } else {
     const s = Math.min(1, (m - ASCENT - DOCKED) / RETURN);
-    const from = docked(issOffset(undockAt, R));
+    const from = docked(undockAt);
     const back = [from, up(0.7), onPad('ship')] as const;
     const u = smooth(s);
     const p = bezier(...back, u);
@@ -141,6 +183,7 @@ export function missionAt(t: number, R: number): Vehicle[] {
       dy: flipped ? -travel.y : travel.y,
       burning: flipped && s < 1,
       plasma: s > 0.15 && s < 0.65,
+      z: toMoon ? frontOfMoon(t, p, from.z * (1 - u), R) : 0,
     });
   }
   return out;

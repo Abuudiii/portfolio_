@@ -1,13 +1,11 @@
 /** 1-bit dithered Earth + Moon, orbiting, with the ISS and the occasional Starship mission. */
 
 import { DitherScene, TAU, fbm3, mulberry32, type Layout } from './dither';
-import { VEHICLE_LENGTH, issOffset, missionAt, orbitOffset } from './spaceflight';
+import { MOON_PERIOD, VEHICLE_LENGTH, issOffset, missionAt, moonOffset, moonRadius } from './spaceflight';
 
-const MOON_PERIOD = 26; // seconds per orbit
 const DAY_PERIOD = 60; // seconds per Earth rotation
 const AXIAL_TILT = 0.41; // radians (~23.4 deg)
-const ORBIT_INCLINATION = 0.3; // camera elevation above the orbital plane
-const ORBIT_ROLL = -0.16; // tilt of the orbit ellipse on screen
+const RIM_SPACING = 2; // dither px between atmosphere-rim dots
 
 // ISS silhouette: '#' truss (solid), 'p' solar arrays and 'm' modules (shaded and dithered).
 const ISS_SPRITE = [
@@ -154,7 +152,7 @@ export class OrbitScene extends DitherScene {
   }
 
   private moonPosition(t: number) {
-    return orbitOffset((t / MOON_PERIOD) * TAU + 2.2, this.R * 2.5, ORBIT_INCLINATION, ORBIT_ROLL);
+    return moonOffset(t, this.R);
   }
 
   /** Dotted Moon orbit, drawn behind the bodies and left off the Earth's disc. */
@@ -237,9 +235,9 @@ export class OrbitScene extends DitherScene {
   private drawVehicles(t: number, moon: { x: number; y: number; z: number; r: number }) {
     const { cx, cy, R } = this;
     const flicker = Math.floor(t * 18) % 2;
-    // Rockets fly close to the limb or ride the ISS, so a depth just above the surface is close enough.
-    const hidden = this.occluder(0, moon);
     for (const v of missionAt(t, R)) {
+      // Each rocket carries its own depth: near the Earth's limb, or out by the Moon.
+      const hidden = this.occluder(v.z, moon);
       const len = VEHICLE_LENGTH[v.kind];
       const points: [number, number][] = [];
       // Position `i` pixels behind the nose, `side` pixels across the body.
@@ -333,25 +331,20 @@ export class OrbitScene extends DitherScene {
     }
   }
 
-  /** Thin dithered atmosphere rim all the way round the disc, so the night side still reads as a sphere. */
+  /**
+   * Atmosphere rim: evenly spaced dots just outside the disc, all the way round, so the night side
+   * still reads as a sphere. Spacing by arc length (not the dither mask) keeps it round: the mask
+   * lines up into flat dashes wherever the edge runs near horizontal.
+   */
   private drawAtmosphere() {
-    const { w, h, buf, mask, cx, cy, R } = this;
-    const halo = Math.max(2, R * 0.03);
-    const outer = R + halo;
-    const x0 = Math.max(0, Math.floor(cx - outer));
-    const x1 = Math.min(w - 1, Math.ceil(cx + outer));
-    const y0 = Math.max(0, Math.floor(cy - outer));
-    const y1 = Math.min(h - 1, Math.ceil(cy + outer));
-    for (let y = y0; y <= y1; y++) {
-      const dy = y + 0.5 - cy;
-      for (let x = x0; x <= x1; x++) {
-        const dx = x + 0.5 - cx;
-        const d = Math.hypot(dx, dy);
-        if (d <= R || d > outer) continue;
-        const fall = 1 - (d - R) / halo;
-        const k = y * w + x;
-        if (fall * 0.55 > mask[k]) buf[k] = 1;
-      }
+    const { w, h, buf, cx, cy, R } = this;
+    const r = R + 1;
+    const dots = Math.round((TAU * r) / RIM_SPACING);
+    for (let i = 0; i < dots; i++) {
+      const a = (i / dots) * TAU;
+      const x = Math.floor(cx + Math.cos(a) * r);
+      const y = Math.floor(cy + Math.sin(a) * r);
+      if (x >= 0 && y >= 0 && x < w && y < h) buf[y * w + x] = 1;
     }
   }
 
@@ -402,8 +395,7 @@ export class OrbitScene extends DitherScene {
     this.drawOrbitPath();
 
     const mp = this.moonPosition(t);
-    const depth = 1 + (mp.z / (R * 2.5)) * 0.1;
-    const moon = { x: cx + mp.x, y: cy + mp.y, z: mp.z, r: R * 0.27 * depth };
+    const moon = { x: cx + mp.x, y: cy + mp.y, z: mp.z, r: moonRadius(mp.z, R) };
     const earth = { x: cx, y: cy, z: 0, r: R };
     const spin = (t / DAY_PERIOD) * TAU;
     const moonSpin = (t / MOON_PERIOD) * TAU; // tidally locked

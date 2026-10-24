@@ -166,10 +166,9 @@ export abstract class DitherScene {
     }
   }
 
-  /** A large Andromeda-like spiral with a small elliptical companion off its near side. */
+  /** A large Andromeda-like spiral, seen steeply inclined. */
   protected addHeroGalaxy(gx: number, gy: number, size: number, angle: number) {
     this.addGalaxy(gx, gy, size, 0.3, angle);
-    this.addGalaxy(gx - Math.sin(angle) * size * 0.6, gy + Math.cos(angle) * size * 0.6, size * 0.18, 0.6, angle + 0.8);
   }
 
   /**
