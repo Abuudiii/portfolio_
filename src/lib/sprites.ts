@@ -224,5 +224,45 @@ const telescope: Sprite = {
   },
 };
 
-export const sprites = { gpu, rover, bag, chip, network, neurons, telescope } satisfies Record<string, Sprite>;
+/**
+ * QWOP agent: a stick-figure runner striding over a scrolling track, a reward sparkle popping
+ * above its head once per stride (the RL loop: act, move forward, get rewarded).
+ */
+const runner: Sprite = {
+  frames: 8,
+  fps: 8,
+  draw(p, f) {
+    const phase = (f / 8) * Math.PI * 2;
+    const bob = Math.abs(Math.sin(phase)) < 0.5 ? 0 : 1;
+    const hipX = 7;
+    const hipY = 9 + bob;
+    // Head, torso leaning forward, and two arms swinging opposite the legs.
+    p.disc(9, 2.5 + bob, 1.4);
+    p.line(hipX, hipY, 9, 4 + bob);
+    for (const side of [1, -1]) {
+      const arm = Math.sin(phase) * side;
+      p.line(8, 5 + bob, 8 + arm * 3 + side * 0.6, 7 + bob + Math.abs(arm));
+      // Legs: thigh swings wide, calf trails and kicks back on the recovery stroke.
+      const thigh = Math.PI / 2 - 0.15 + Math.sin(phase) * side * 0.75;
+      const kneeX = hipX + Math.cos(thigh) * 3;
+      const kneeY = hipY + Math.sin(thigh) * 3;
+      const calf = thigh + 0.15 + Math.max(0, -Math.cos(phase) * side) * 1.1;
+      p.line(hipX, hipY, kneeX, kneeY);
+      p.line(kneeX, kneeY, kneeX + Math.cos(calf) * 3, Math.min(14, kneeY + Math.sin(calf) * 3));
+    }
+    // Track markings scroll backwards: the agent is making progress.
+    p.rect(0, 15, 16, 1);
+    for (let x = 0; x < 16; x++) if ((x + f * 2) % 6 === 0) p.px(x, 14);
+    // Reward: a small plus sparkle flashes up and to the right each stride.
+    if (f < 3) {
+      const y = 4 - f;
+      p.px(14, y);
+      p.px(13, y + 1);
+      p.px(15, y + 1);
+      p.px(14, y + 2);
+    }
+  },
+};
+
+export const sprites = { gpu, rover, bag, chip, network, neurons, telescope, runner } satisfies Record<string, Sprite>;
 export type SpriteName = keyof typeof sprites;

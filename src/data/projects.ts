@@ -25,4 +25,12 @@ export const projects: Project[] = [
     summary:
       'Hands-free typing with a non-invasive EEG headset. Flickering targets pick letter ranges, a local model decodes the words, head gestures navigate, and AI agents act on the result.',
   },
+  {
+    name: 'QWOP agent',
+    context: 'Reinforcement learning',
+    href: 'https://huggingface.co/Abuudiii/qrdqn-QWOP',
+    icon: 'runner',
+    summary:
+      'A QR-DQN agent that learned to run QWOP and finishes the full 100 m. Trained for 10M steps across 8 parallel games on an AMD Radeon GPU with ROCm.',
+  },
 ];

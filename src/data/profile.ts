@@ -3,7 +3,7 @@ export const profile = {
   tagline: 'Software engineer who loves working low-level.',
   location: 'Calgary, AB',
   school: 'CS @ UCalgary, 2028',
-  email: 'sheikh07abdullah@gmail.com',
+  email: 'sheikh04abdullah@gmail.com',
   links: [
     { label: 'GitHub', href: 'https://github.com/Abuudiii' },
     { label: 'LinkedIn', href: 'https://www.linkedin.com/in/abdullah-tar-gz/' },
