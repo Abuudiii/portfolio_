@@ -92,7 +92,7 @@ export default function App() {
       <Panel id="projects" scene={BlackHoleScene} wide={wide}>
         <h2 className="text-sm font-medium uppercase tracking-[0.3em]">Projects</h2>
 
-        <ol className="max-w-[30rem] space-y-8">
+        <ol className="max-w-[30rem] space-y-5">
           {projects.map((project) => (
             <li key={project.name} className="grid grid-cols-[auto_1fr] items-start gap-x-4 text-[13px] leading-relaxed">
               <PixelIcon name={project.icon} />
@@ -106,7 +106,7 @@ export default function App() {
                   {project.name} ↗
                 </a>
                 <span className="mt-1 block text-[11px] uppercase tracking-[0.18em]">{project.context}</span>
-                <p className="mt-2">{project.summary}</p>
+                <p className="mt-1.5">{project.summary}</p>
               </div>
             </li>
           ))}

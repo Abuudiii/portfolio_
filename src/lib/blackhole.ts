@@ -108,6 +108,13 @@ function trace(u: number, v: number): Hit {
   return { kind: 'sky', sx: x + (vx / speed) * t, sy: y + (vy / speed) * t };
 }
 
+/** Fixed 0..1 value per source-sky pixel: each star's own fade-out threshold. */
+function starHash(i: number) {
+  let x = Math.imul(i ^ (i >>> 16), 0x45d9f3b);
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
+  return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+}
+
 export class BlackHoleScene extends DitherScene {
   protected starSeed = 2026;
   private tex = buildDiskTexture();
@@ -118,6 +125,13 @@ export class BlackHoleScene extends DitherScene {
    */
   private srcX = new Uint16Array(0);
   private srcY = new Float32Array(0);
+  /**
+   * How bright a point star looks at each screen pixel: the lens magnification, capped at 1.
+   * Where the lens squeezes a patch of sky into fewer pixels (inside the Einstein ring, toward the
+   * shadow), each star's light is spread thinner, so it dithers away instead of showing as an
+   * ordinary full-strength dot; where the lens stretches sky (along the ring), stars smear into arcs.
+   */
+  private gain = new Float32Array(0);
   /** Source sky for the current frame (stars with twinkle applied), resampled into `buf`. */
   private sky = new Uint8Array(0);
   private diskIdx = new Int32Array(0);
@@ -140,6 +154,9 @@ export class BlackHoleScene extends DitherScene {
 
     const srcX = new Uint16Array(w * h);
     const srcY = new Float32Array(w * h);
+    // Unwrapped source position per pixel (NaN on the horizon/disk), for the magnification below.
+    const sxf = new Float32Array(w * h).fill(NaN);
+    const syf = new Float32Array(w * h).fill(NaN);
     const idx: number[] = [];
     const row: number[] = [];
     const phis: number[] = [];
@@ -153,6 +170,8 @@ export class BlackHoleScene extends DitherScene {
         if (px < quietX) {
           srcX[k] = px;
           srcY[k] = py + 0.5;
+          sxf[k] = px + 0.5;
+          syf[k] = py + 0.5;
           continue;
         }
         // Screen offset -> hole-plane coordinates (undo the roll, scale to Rs).
@@ -199,11 +218,45 @@ export class BlackHoleScene extends DitherScene {
         const sy = cy + (su * SIN_ROLL + sv * COS_ROLL) * rs;
         srcX[k] = ((Math.round(sx) % w) + w) % w;
         srcY[k] = (((sy + 0.5) % h) + h) % h;
+        sxf[k] = sx;
+        syf[k] = sy;
+      }
+    }
+
+    // Magnification = 1 / |det J|, J the Jacobian of the screen -> source map (central differences,
+    // one-sided at the horizon, disk and canvas edges).
+    const gain = new Float32Array(w * h);
+    const diff = (a: Float32Array, k: number, step: number, lo: boolean, hi: boolean) => {
+      const prev = lo ? a[k - step] : NaN;
+      const next = hi ? a[k + step] : NaN;
+      if (!Number.isNaN(prev) && !Number.isNaN(next)) return (next - prev) / 2;
+      if (!Number.isNaN(next)) return next - a[k];
+      if (!Number.isNaN(prev)) return a[k] - prev;
+      return 1;
+    };
+    // Outside the Einstein ring a point lens only ever magnifies (the fade band by the text column
+    // would otherwise read as a slight squeeze), so dimming applies inside it only.
+    const einstein2 = 2 * SOURCE_DIST * rs * rs;
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const k = py * w + px;
+        if (Number.isNaN(sxf[k])) continue;
+        if ((px + 0.5 - cx) ** 2 + (py + 0.5 - cy) ** 2 >= einstein2) {
+          gain[k] = 1;
+          continue;
+        }
+        const l = px > 0;
+        const r = px < w - 1;
+        const u = py > 0;
+        const d = py < h - 1;
+        const det = diff(sxf, k, 1, l, r) * diff(syf, k, w, u, d) - diff(sxf, k, w, u, d) * diff(syf, k, 1, l, r);
+        gain[k] = Math.min(1, 1 / Math.max(1e-6, Math.abs(det)));
       }
     }
 
     this.srcX = srcX;
     this.srcY = srcY;
+    this.gain = gain;
     this.sky = new Uint8Array(w * h);
     this.diskIdx = Int32Array.from(idx);
     this.diskRow = Uint16Array.from(row);
@@ -213,7 +266,7 @@ export class BlackHoleScene extends DitherScene {
   }
 
   render(t: number) {
-    const { w, h, buf, mask, sky, srcX, srcY, tex, diskIdx, diskRow, diskPhi, diskOmega, diskWeight } = this;
+    const { w, h, buf, mask, sky, srcX, srcY, gain, tex, diskIdx, diskRow, diskPhi, diskOmega, diskWeight } = this;
     // Twinkle in the source sky, so a star's lensed images all blink together.
     sky.set(this.bg);
     for (const s of this.twinklers) if (Math.sin(t * s.rate + s.phase) > 0.55) sky[s.i] = 0;
@@ -227,7 +280,11 @@ export class BlackHoleScene extends DitherScene {
       }
       let y = Math.floor(sy + drift);
       if (y >= h) y -= h;
-      buf[k] = sky[y * w + srcX[k]];
+      // A star shows at full strength where the lens doesn't squeeze it, and fades out where it
+      // does. Each star gets a fixed threshold from its sky position (not the screen dither), so a
+      // drifting star stays steady and drops out once, rather than blinking pixel to pixel.
+      const src = y * w + srcX[k];
+      buf[k] = sky[src] && starHash(src) < gain[k] ? 1 : 0;
     }
     for (let i = 0; i < diskIdx.length; i++) {
       let a = (diskPhi[i] - diskOmega[i] * t) / TAU;

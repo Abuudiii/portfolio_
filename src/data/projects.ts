@@ -10,12 +10,20 @@ export type Project = {
 
 export const projects: Project[] = [
   {
+    name: 'RLHF with GRPO',
+    context: 'Qwen2.5-1.5B · Anthropic HH-RLHF',
+    href: 'https://huggingface.co/Abuudiii/grpo-Qwen2.5-1.5B-hh-rlhf-combined',
+    icon: 'rlhf',
+    summary:
+      'Fine-tuned Qwen2.5-1.5B with GRPO against helpful and harmless reward models trained on human preferences, raising red-team refusals from 62.5% to 94%.',
+  },
+  {
     name: 'Exoplanets',
     context: "NASA's TESS satellite data",
     href: 'https://github.com/MikaVohl/exoplanets',
     icon: 'telescope',
     summary:
-      'Hunting planets in NASA TESS light curves: masked transit searches, a labelled dataset built from NASA verdicts, and models that rank new candidates.',
+      'Hunting planets in NASA TESS light curves: masked transit searches and models that rank new candidates.',
   },
   {
     name: 'NeuroNorth',
@@ -23,14 +31,14 @@ export const projects: Project[] = [
     href: 'https://devpost.com/software/neuro-north',
     icon: 'neurons',
     summary:
-      'Hands-free typing with a non-invasive EEG headset. Flickering targets pick letter ranges, a local model decodes the words, head gestures navigate, and AI agents act on the result.',
+      'Hands-free typing with an EEG headset: flickering targets pick letters and a local model decodes words.',
   },
   {
-    name: 'QWOP agent',
+    name: 'Doom deathmatch agent',
     context: 'Reinforcement learning',
-    href: 'https://huggingface.co/Abuudiii/qrdqn-QWOP',
-    icon: 'runner',
+    href: 'https://huggingface.co/Abuudiii/rl_course_vizdoom_deathmatch_bots',
+    icon: 'doom',
     summary:
-      'A QR-DQN agent that learned to run QWOP and finishes the full 100 m. Trained for 10M steps across 8 parallel games on an AMD Radeon GPU with ROCm.',
+      'An APPO agent that learned Doom deathmatch from raw pixels across 512 parallel games on AMD GPUs.',
   },
 ];

@@ -225,44 +225,94 @@ const telescope: Sprite = {
 };
 
 /**
- * QWOP agent: a stick-figure runner striding over a scrolling track, a reward sparkle popping
- * above its head once per stride (the RL loop: act, move forward, get rewarded).
+ * RLHF with GRPO: an answer types into a speech bubble, then a judge marks it. The first answer
+ * earns a check (preferred), the second an X (rejected): human preference as the reward.
  */
-const runner: Sprite = {
-  frames: 8,
+const rlhf: Sprite = {
+  frames: 24,
   fps: 8,
   draw(p, f) {
-    const phase = (f / 8) * Math.PI * 2;
-    const bob = Math.abs(Math.sin(phase)) < 0.5 ? 0 : 1;
-    const hipX = 7;
-    const hipY = 9 + bob;
-    // Head, torso leaning forward, and two arms swinging opposite the legs.
-    p.disc(9, 2.5 + bob, 1.4);
-    p.line(hipX, hipY, 9, 4 + bob);
-    for (const side of [1, -1]) {
-      const arm = Math.sin(phase) * side;
-      p.line(8, 5 + bob, 8 + arm * 3 + side * 0.6, 7 + bob + Math.abs(arm));
-      // Legs: thigh swings wide, calf trails and kicks back on the recovery stroke.
-      const thigh = Math.PI / 2 - 0.15 + Math.sin(phase) * side * 0.75;
-      const kneeX = hipX + Math.cos(thigh) * 3;
-      const kneeY = hipY + Math.sin(thigh) * 3;
-      const calf = thigh + 0.15 + Math.max(0, -Math.cos(phase) * side) * 1.1;
-      p.line(hipX, hipY, kneeX, kneeY);
-      p.line(kneeX, kneeY, kneeX + Math.cos(calf) * 3, Math.min(14, kneeY + Math.sin(calf) * 3));
+    const round = Math.floor(f / 12);
+    const t = f % 12;
+    // Bubble with a tail at its bottom-left corner.
+    p.outline(0, 0, 12, 9);
+    p.line(2, 9, 2, 11);
+    p.line(3, 10, 4, 9);
+    // Two lines of text type in, two pixels per frame, with a gap between words.
+    const lines: [number, number][] = round === 0 ? [[3, 8], [5, 5]] : [[3, 7], [5, 4]];
+    let budget = t * 2;
+    for (const [y, len] of lines) {
+      for (let x = 0; x < Math.min(len, budget); x++) if (x !== 3) p.px(2 + x, y);
+      budget -= len;
     }
-    // Track markings scroll backwards: the agent is making progress.
-    p.rect(0, 15, 16, 1);
-    for (let x = 0; x < 16; x++) if ((x + f * 2) % 6 === 0) p.px(x, 14);
-    // Reward: a small plus sparkle flashes up and to the right each stride.
-    if (f < 3) {
-      const y = 4 - f;
-      p.px(14, y);
-      p.px(13, y + 1);
-      p.px(15, y + 1);
-      p.px(14, y + 2);
+    // Verdict once the answer is written: a bold check (preferred) or X (rejected).
+    if (t >= 7) {
+      if (round === 0) {
+        for (const dy of [0, 1]) {
+          p.line(8, 11 + dy, 10, 13 + dy);
+          p.line(10, 13 + dy, 15, 8 + dy);
+        }
+      } else {
+        for (const dx of [0, 1]) {
+          p.line(9 + dx, 9, 14 + dx, 14);
+          p.line(14 + dx, 9, 9 + dx, 14);
+        }
+      }
     }
   },
 };
 
-export const sprites = { gpu, rover, bag, chip, network, neurons, telescope, runner } satisfies Record<string, Sprite>;
+/**
+ * Doom deathmatch agent: first-person view down a corridor. The pistol recoils with a muzzle
+ * flash, and the horned imp ahead flinches when the shot lands.
+ */
+const doom: Sprite = {
+  frames: 12,
+  fps: 8,
+  draw(p, f) {
+    const firing = f === 0 || f === 6;
+    const hit = f === 1 || f === 7;
+    // Floor edges receding to the horizon.
+    p.line(0, 14, 3, 11);
+    p.line(15, 14, 12, 11);
+    // Imp: horns, masked head, clawed arms raised, torso, legs. Knocked back and hollow when hit.
+    const ix = hit ? 6 : 5;
+    const iy = hit ? 0 : 1;
+    p.px(ix, iy);
+    p.px(ix + 5, iy);
+    p.px(ix - 1, iy - 1);
+    p.px(ix + 6, iy - 1);
+    p.rect(ix + 1, iy + 1, 4, 2);
+    p.px(ix + 2, iy + 2, 0);
+    p.px(ix + 3, iy + 2, 0);
+    p.rect(ix - 1, iy + 3, 8, 1);
+    p.px(ix - 2, iy + 2);
+    p.px(ix + 7, iy + 2);
+    p.rect(ix + 1, iy + 4, 4, 2);
+    p.px(ix + 1, iy + 6);
+    p.px(ix + 4, iy + 6);
+    if (hit) {
+      p.rect(ix + 2, iy + 4, 2, 1, 0);
+      p.px(ix - 2, iy + 5);
+      p.px(ix - 3, iy + 4);
+      p.px(ix - 2, iy + 6);
+    }
+    // Pistol from behind, bottom centre: front sight, slide, gripping hand. Recoils on each shot.
+    const gy = firing ? 11 : 10;
+    p.rect(7, gy, 2, 1);
+    p.outline(6, gy + 1, 4, 3);
+    p.rect(5, gy + 4, 6, 2);
+    p.px(4, gy + 5);
+    p.px(11, gy + 5);
+    if (firing) {
+      p.rect(7, gy - 1, 2, 1);
+      p.px(6, gy - 2);
+      p.px(9, gy - 2);
+      p.px(5, gy - 1);
+      p.px(10, gy - 1);
+    }
+  },
+};
+
+export const sprites = { gpu, rover, bag, chip, network, neurons, telescope, rlhf, doom } satisfies Record<string, Sprite>;
 export type SpriteName = keyof typeof sprites;
